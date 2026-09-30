@@ -28,9 +28,18 @@ local textDialog
 
 local TAB_NAMES = { "Clasificación", "Retos", "Sesión" }
 
--- Clientes modernos exigen heredar BackdropTemplate para usar SetBackdrop;
--- en clientes tipo Classic es nativo y el template no existe.
-local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplateMixin and BackdropTemplate" or nil
+-- En clientes Classic los frames tienen SetBackdrop nativo; en Retail hay que
+-- aplicar BackdropTemplateMixin a mano (el template virtual puede no existir).
+local function NewBackdropFrame(frameType, name, parent)
+  local f = CreateFrame(frameType, name, parent)
+  if not f.SetBackdrop and BackdropTemplateMixin then
+    Mixin(f, BackdropTemplateMixin)
+    if f.OnBackdropLoad then
+      f:OnBackdropLoad()
+    end
+  end
+  return f
+end
 
 -- ---------------------------------------------------------------------------
 -- Utilidades de construcción
@@ -249,7 +258,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function CreatePicker()
-  local f = CreateFrame("Frame", "LaTabernaPicker", main, BACKDROP_TEMPLATE)
+  local f = NewBackdropFrame("Frame", "LaTabernaPicker", main)
   f:SetSize(260, 480)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -321,7 +330,7 @@ local function MakeEditBox(parent, width)
 end
 
 local function CreateEditDialog()
-  local f = CreateFrame("Frame", "LaTabernaEditChallenge", main, BACKDROP_TEMPLATE)
+  local f = NewBackdropFrame("Frame", "LaTabernaEditChallenge", main)
   f:SetSize(360, 240)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -392,7 +401,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function CreateTextDialog()
-  local f = CreateFrame("Frame", "LaTabernaTextDialog", main, BACKDROP_TEMPLATE)
+  local f = NewBackdropFrame("Frame", "LaTabernaTextDialog", main)
   f:SetSize(460, 300)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -486,7 +495,7 @@ local function SelectTab(index)
 end
 
 local function CreateMainFrame()
-  local f = CreateFrame("Frame", "LaTabernaFrame", UIParent, BACKDROP_TEMPLATE)
+  local f = NewBackdropFrame("Frame", "LaTabernaFrame", UIParent)
   f:SetSize(520, 460)
   f:SetPoint("CENTER")
   f:SetMovable(true)
