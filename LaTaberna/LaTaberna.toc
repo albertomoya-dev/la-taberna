@@ -1,4 +1,4 @@
-## Interface: 110100
+## Interface: 16001
 ## Title: La Taberna
 ## Notes: Liga privada de retos para tu grupo de amigos.
 ## Author: La Taberna
