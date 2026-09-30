@@ -28,6 +28,10 @@ local textDialog
 
 local TAB_NAMES = { "Clasificación", "Retos", "Sesión" }
 
+-- Clientes modernos exigen heredar BackdropTemplate para usar SetBackdrop;
+-- en clientes tipo Classic es nativo y el template no existe.
+local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplateMixin and BackdropTemplate" or nil
+
 -- ---------------------------------------------------------------------------
 -- Utilidades de construcción
 -- ---------------------------------------------------------------------------
@@ -245,7 +249,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function CreatePicker()
-  local f = CreateFrame("Frame", "LaTabernaPicker", main, "BackdropTemplateMixin and BackdropTemplate")
+  local f = CreateFrame("Frame", "LaTabernaPicker", main, BACKDROP_TEMPLATE)
   f:SetSize(260, 480)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -317,7 +321,7 @@ local function MakeEditBox(parent, width)
 end
 
 local function CreateEditDialog()
-  local f = CreateFrame("Frame", "LaTabernaEditChallenge", main, "BackdropTemplateMixin and BackdropTemplate")
+  local f = CreateFrame("Frame", "LaTabernaEditChallenge", main, BACKDROP_TEMPLATE)
   f:SetSize(360, 240)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -388,7 +392,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local function CreateTextDialog()
-  local f = CreateFrame("Frame", "LaTabernaTextDialog", main, "BackdropTemplateMixin and BackdropTemplate")
+  local f = CreateFrame("Frame", "LaTabernaTextDialog", main, BACKDROP_TEMPLATE)
   f:SetSize(460, 300)
   f:SetPoint("CENTER")
   f:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -482,7 +486,7 @@ local function SelectTab(index)
 end
 
 local function CreateMainFrame()
-  local f = CreateFrame("Frame", "LaTabernaFrame", UIParent, "BackdropTemplateMixin and BackdropTemplate")
+  local f = CreateFrame("Frame", "LaTabernaFrame", UIParent, BACKDROP_TEMPLATE)
   f:SetSize(520, 460)
   f:SetPoint("CENTER")
   f:SetMovable(true)
