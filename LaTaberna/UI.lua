@@ -3,12 +3,14 @@ LaTaberna = LaTaberna or {}
 
 local Rules = LaTaberna.Rules
 local Session = LaTaberna.Session
+local Stats = LaTaberna.Stats
 
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.2.0"
+local ADDON_VERSION = "0.3.0"
 local MAX_ROWS = 21       -- filas visibles de la clasificación
+local LEAGUE_ROWS = 18    -- filas visibles por ranking de la liga
 local PICKER_ROWS = 20    -- participantes seleccionables a la vez
 
 local main
@@ -19,6 +21,10 @@ local currentTab = 1
 -- Referencias que se rellenan al crear los frames
 local lbRows = {}
 local lbHeader
+local leagueRows = {}
+local leagueHeader
+local leagueSubButtons = {}
+local leagueKind = "kills"
 local challengeBlocks = {}
 local sessionLines = {}
 local sessionButtons = {}
@@ -26,7 +32,7 @@ local picker
 local editDialog
 local textDialog
 
-local TAB_NAMES = { "Clasificación", "Retos", "Sesión" }
+local TAB_NAMES = { "Clasificación", "Liga", "Retos", "Sesión" }
 
 -- En clientes Classic los frames tienen SetBackdrop nativo; en Retail hay que
 -- aplicar BackdropTemplateMixin a mano (el template virtual puede no existir).
@@ -49,6 +55,32 @@ local function MakeButton(parent, text, width, height)
   local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
   b:SetSize(width, height)
   b:SetText(text)
+  return b
+end
+
+-- Botón destructivo con doble confirmación: el primer clic arma ("¿Seguro?")
+-- durante unos segundos y solo el segundo ejecuta.
+local function MakeDangerButton(parent, text, width)
+  local b = MakeButton(parent, text, width, 24)
+  local armed = false
+  b:SetScript("OnClick", function(self)
+    if not armed then
+      armed = true
+      self:SetText("¿Seguro? Pulsa otra vez")
+      C_Timer.After(4, function()
+        if armed then
+          armed = false
+          self:SetText(text)
+        end
+      end)
+    else
+      armed = false
+      self:SetText(text)
+      if b.onConfirm then
+        b.onConfirm()
+      end
+    end
+  end)
   return b
 end
 
@@ -117,7 +149,86 @@ local function RefreshLeaderboard()
 end
 
 -- ---------------------------------------------------------------------------
--- Pestaña 2: Retos
+-- Pestaña 2: Liga (rankings de enemigos, duelos y rares)
+-- ---------------------------------------------------------------------------
+
+local function SelectLeagueKind(index)
+  leagueKind = Stats.KINDS[index]
+  for i, b in ipairs(leagueSubButtons) do
+    if i == index then
+      b:Disable()
+    else
+      b:Enable()
+    end
+  end
+  RefreshLeague()
+end
+
+local function CreateLeagueTab(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  for i, kind in ipairs(Stats.KINDS) do
+    local b = MakeButton(f, Stats.LABELS[kind], 150, 20)
+    b:SetPoint("TOPLEFT", 8 + (i - 1) * 158, -6)
+    leagueSubButtons[i] = b
+    b:SetScript("OnClick", function()
+      SelectLeagueKind(i)
+    end)
+  end
+
+  leagueHeader = MakeLabel(f, "GameFontHighlight")
+  leagueHeader:SetPoint("TOPLEFT", 8, -34)
+
+  for i = 1, LEAGUE_ROWS do
+    local y = -56 - (i - 1) * 17
+    local rank = MakeLabel(f, "GameFontDisableSmall")
+    rank:SetPoint("TOPLEFT", 8, y)
+    rank:SetWidth(28)
+    local name = MakeLabel(f, "GameFontNormal")
+    name:SetPoint("TOPLEFT", 40, y)
+    name:SetWidth(300)
+    local value = MakeLabel(f, "GameFontHighlight")
+    value:SetPoint("TOPLEFT", 348, y)
+    value:SetWidth(100)
+    leagueRows[i] = { rank = rank, name = name, value = value }
+  end
+  return f
+end
+
+function RefreshLeague()
+  if not leagueHeader then
+    return
+  end
+  local s = Session.Active()
+  local label = Stats.LABELS[leagueKind] or ""
+  if not s then
+    leagueHeader:SetText(label .. " — sin sesión activa")
+    for _, row in ipairs(leagueRows) do
+      row.rank:SetText("")
+      row.name:SetText("")
+      row.value:SetText("")
+    end
+    return
+  end
+  leagueHeader:SetText(label)
+  local board = Stats.ComputeLeaderboard(leagueKind)
+  for i, row in ipairs(leagueRows) do
+    local entry = board[i]
+    if entry then
+      row.rank:SetText(i .. ".")
+      row.name:SetText(entry.name)
+      row.value:SetText(tostring(entry.value))
+    else
+      row.rank:SetText("")
+      row.name:SetText("")
+      row.value:SetText("")
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Pestaña 3: Retos
 -- ---------------------------------------------------------------------------
 
 local function CreateChallengesTab(parent)
@@ -176,7 +287,7 @@ local function RefreshChallenges()
 end
 
 -- ---------------------------------------------------------------------------
--- Pestaña 3: Sesión
+-- Pestaña 4: Sesión
 -- ---------------------------------------------------------------------------
 
 local function CreateSessionTab(parent)
@@ -189,6 +300,7 @@ local function CreateSessionTab(parent)
     sessionLines[i] = line
   end
 
+  -- Fila 1: ciclo de vida de la sesión
   sessionButtons.create = MakeButton(f, "Crear sesión", 120, 24)
   sessionButtons.create:SetPoint("TOPLEFT", 8, -180)
   sessionButtons.create:SetScript("OnClick", function()
@@ -201,14 +313,28 @@ local function CreateSessionTab(parent)
     Session.Leave()
   end)
 
-  sessionButtons.close = MakeButton(f, "Cerrar sesión", 120, 24)
+  sessionButtons.close = MakeDangerButton(f, "Cerrar sesión", 150)
   sessionButtons.close:SetPoint("LEFT", sessionButtons.leave, "RIGHT", 8, 0)
-  sessionButtons.close:SetScript("OnClick", function()
-    StaticPopup_Show("LATABERNA_CLOSE")
+  sessionButtons.close.onConfirm = function()
+    Session.Close()
+  end
+
+  -- Fila 2: invitaciones
+  sessionButtons.invite = MakeButton(f, "Código de invitación", 150, 24)
+  sessionButtons.invite:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -10)
+  sessionButtons.invite:SetScript("OnClick", function()
+    UI.ShowInvite()
   end)
 
+  sessionButtons.join = MakeButton(f, "Unirse con código…", 150, 24)
+  sessionButtons.join:SetPoint("LEFT", sessionButtons.invite, "RIGHT", 8, 0)
+  sessionButtons.join:SetScript("OnClick", function()
+    UI.ShowJoin()
+  end)
+
+  -- Fila 3: respaldo
   sessionButtons.export = MakeButton(f, "Exportar", 90, 24)
-  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -10)
+  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.invite, "BOTTOMLEFT", 0, -10)
   sessionButtons.export:SetScript("OnClick", function()
     UI.ShowExport()
   end)
@@ -218,6 +344,21 @@ local function CreateSessionTab(parent)
   sessionButtons.import:SetScript("OnClick", function()
     UI.ShowImport()
   end)
+
+  -- Fila 4: borrado (doble confirmación)
+  sessionButtons.reset = MakeDangerButton(f, "Reiniciar liga", 190)
+  sessionButtons.reset:SetPoint("TOPLEFT", sessionButtons.export, "BOTTOMLEFT", 0, -14)
+  sessionButtons.reset.onConfirm = function()
+    Session.ResetLeague()
+  end
+
+  sessionButtons.wipeHistory = MakeDangerButton(f, "Borrar historial", 190)
+  sessionButtons.wipeHistory:SetPoint("LEFT", sessionButtons.reset, "RIGHT", 8, 0)
+  sessionButtons.wipeHistory.onConfirm = function()
+    LaTaberna.Storage.ClearHistory()
+    Session.Print("Historial local borrado.")
+    UI.Refresh()
+  end
 
   return f
 end
@@ -251,7 +392,10 @@ local function RefreshSessionTab()
   sessionButtons.create:SetShown(s == nil)
   sessionButtons.leave:SetShown(s ~= nil and not Session.IsOrganizer())
   sessionButtons.close:SetShown(s ~= nil and Session.IsOrganizer())
+  sessionButtons.invite:SetShown(s ~= nil)
+  sessionButtons.join:SetShown(s == nil)
   sessionButtons.export:SetShown(s ~= nil)
+  sessionButtons.reset:SetShown(s ~= nil and Session.IsOrganizer())
 end
 
 -- ---------------------------------------------------------------------------
@@ -445,36 +589,84 @@ local function CreateTextDialog()
   return f
 end
 
+local function ShowTextDialog(opts)
+  textDialog.title:SetText(opts.title)
+  textDialog.editBox:SetText(opts.text or "")
+  if opts.actionLabel then
+    textDialog.action:SetText(opts.actionLabel)
+    textDialog.action:SetScript("OnClick", function()
+      opts.onAction(textDialog.editBox:GetText())
+    end)
+    textDialog.action:Show()
+  else
+    textDialog.action:Hide()
+  end
+  if opts.highlight then
+    textDialog.editBox:HighlightText()
+    textDialog.editBox:SetFocus()
+  end
+  textDialog:Show()
+end
+
 function UI.ShowExport()
   local data = LaTaberna.Storage.ExportSession()
   if not data then
     Session.Print("No hay sesión activa que exportar.")
     return
   end
-  textDialog.title:SetText("Copia este texto y guárdalo como respaldo")
-  textDialog.editBox:SetText(data)
-  textDialog.editBox:HighlightText()
-  textDialog.editBox:SetFocus()
-  textDialog.action:Hide()
-  textDialog:Show()
+  ShowTextDialog({
+    title = "Copia este texto y guárdalo como respaldo",
+    text = data,
+    highlight = true,
+  })
 end
 
 function UI.ShowImport()
-  textDialog.title:SetText("Pega aquí un respaldo y pulsa Importar")
-  textDialog.editBox:SetText("")
-  textDialog.action:SetText("Importar")
-  textDialog.action:SetScript("OnClick", function()
-    local ok, err = LaTaberna.Storage.ImportSession(textDialog.editBox:GetText())
-    if ok then
-      Session.Print("Respaldo importado correctamente.")
-      textDialog:Hide()
-      UI.Refresh()
-    else
-      Session.Print("No se pudo importar: " .. (err or "error desconocido."))
-    end
-  end)
-  textDialog.action:Show()
-  textDialog:Show()
+  ShowTextDialog({
+    title = "Pega aquí un respaldo y pulsa Importar",
+    actionLabel = "Importar",
+    onAction = function(text)
+      local ok, err = LaTaberna.Storage.ImportSession(text)
+      if ok then
+        Session.Print("Respaldo importado correctamente.")
+        textDialog:Hide()
+        UI.Refresh()
+      else
+        Session.Print("No se pudo importar: " .. (err or "error desconocido."))
+      end
+    end,
+  })
+end
+
+-- Código de invitación: el id de sesión, para compartir por donde queráis.
+function UI.ShowInvite()
+  local s = Session.Active()
+  if not s then
+    Session.Print("No hay sesión activa.")
+    return
+  end
+  ShowTextDialog({
+    title = "Comparte este código; tus amigos se unen con /taberna unirse <código>",
+    text = s.id,
+    highlight = true,
+  })
+end
+
+function UI.ShowJoin()
+  if Session.Active() then
+    Session.Print("Ya estás en una sesión.")
+    return
+  end
+  ShowTextDialog({
+    title = "Pega el código de invitación y pulsa Unirse",
+    actionLabel = "Unirse",
+    onAction = function(text)
+      Session.JoinByCode(text)
+      if Session.Active() then
+        textDialog:Hide()
+      end
+    end,
+  })
 end
 
 -- ---------------------------------------------------------------------------
@@ -523,8 +715,8 @@ local function CreateMainFrame()
   close:SetPoint("TOPRIGHT", -6, -6)
 
   for i, name in ipairs(TAB_NAMES) do
-    local b = MakeButton(f, name, 120, 22)
-    b:SetPoint("TOPLEFT", 16 + (i - 1) * 128, -40)
+    local b = MakeButton(f, name, 110, 22)
+    b:SetPoint("TOPLEFT", 16 + (i - 1) * 116, -40)
     tabButtons[i] = b
     b:SetScript("OnClick", function()
       SelectTab(i)
@@ -539,8 +731,9 @@ local function CreateMainFrame()
   end
 
   CreateLeaderboardTab(tabFrames[1])
-  CreateChallengesTab(tabFrames[2])
-  CreateSessionTab(tabFrames[3])
+  CreateLeagueTab(tabFrames[2])
+  CreateChallengesTab(tabFrames[3])
+  CreateSessionTab(tabFrames[4])
 
   return f
 end
@@ -555,6 +748,7 @@ function UI.Init()
   editDialog = CreateEditDialog()
   textDialog = CreateTextDialog()
   SelectTab(1)
+  SelectLeagueKind(1)
   UI.Refresh()
 end
 
@@ -575,6 +769,7 @@ function UI.Refresh()
     return
   end
   RefreshLeaderboard()
+  RefreshLeague()
   RefreshChallenges()
   RefreshSessionTab()
 end

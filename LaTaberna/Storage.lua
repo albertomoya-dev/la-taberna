@@ -63,6 +63,10 @@ function Storage.GetHistory()
   return LaTabernaDB.history
 end
 
+function Storage.ClearHistory()
+  LaTabernaDB.history = {}
+end
+
 -- Serialización a Lua literal para export/import y snapshots.
 local function SerializeValue(value, buf)
   local t = type(value)

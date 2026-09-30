@@ -62,13 +62,36 @@ sincronización usa el canal de addon `GUILD`.
 | `/taberna export` | Muestra un respaldo copiable del estado |
 | `/taberna import` | Restaura un respaldo |
 
-La ventana tiene tres pestañas:
+La ventana tiene cuatro pestañas:
 
 - **Clasificación** — puntos de cada participante, en orden.
+- **Liga** — tres rankings automáticos con sub-pestañas: **enemigos
+  derrotados** (golpes de gracia), **duelos ganados** y **rares derrotados**.
+  Cada addon cuenta los suyos y los comparte con el grupo.
 - **Retos** — los 3 retos activos; el organizador ve además los botones
   *Confirmar…* (elegir quién lo completó) y *Editar*.
-- **Sesión** — organizador, tu rol, participantes, estado de las
-  confirmaciones y botones de crear/salir/exportar/importar.
+- **Sesión** — organizador, tu rol, participantes, código de invitación,
+  respaldo (export/import) y borrado de datos.
+
+### Código de invitación
+
+El organizador (o cualquier participante) puede compartir la sesión aunque
+estés desconectado cuando se creó: pestaña **Sesión → Código de invitación**,
+lo copias y se lo pasas a tus amigos. Ellos se unen con:
+
+```
+/taberna unirse <código>
+```
+
+### Borrado de datos
+
+Nada se borra solo: los resultados, las estadísticas y el historial se
+conservan siempre. Solo hay dos acciones destructivas, ambas con **doble
+confirmación** (hay que pulsar el botón dos veces):
+
+- **Reiniciar liga** — solo el líder; pone a cero puntos y estadísticas para
+  todos los participantes.
+- **Borrar historial** — limpia tu archivo local de sesiones cerradas.
 
 ## Qué hay debajo (resumen técnico)
 
@@ -91,6 +114,13 @@ pruebas en el cliente) está en [`LaTaberna/README.md`](LaTaberna/README.md).
 - **Nada de métricas de combate automáticas** (daño, curación, quién la lió):
   Forever usa "valores secretos" que los addons no pueden procesar. La
   validación la hace el organizador.
+- Los contadores de la liga (enemigos, duelos, rares) sí usan el registro de
+  combate y los mensajes de duelo, con protección ante valores secretos: si la
+  beta capa alguno de esos campos, el contador afectado simplemente no sube y
+  habrá que buscar otra fuente (los comandos `/taberna stat <id>` y
+  `/taberna scanstats <a> <b>` ayudan a diagnosticar).
+- El contador de rares se dispara cuando un rare muere en tu zona de combate;
+  puede contar alguno que no hayas tocado. Es una liga entre amigos.
 - La clasificación muestra 21 filas y el selector de participantes 20; para
   grupos mayores habrá que añadir scroll.
 - Es un diseño para un **grupo de confianza**, no un sistema antitrampas.

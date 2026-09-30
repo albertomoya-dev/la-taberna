@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.2.0"
+Core.VERSION = "0.3.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -23,19 +23,6 @@ StaticPopupDialogs["LATABERNA_JOIN"] = {
   end,
   OnCancel = function(_, sid)
     Session.DeclineJoin(sid)
-  end,
-  timeout = 0,
-  whileDead = true,
-  hideOnEscape = true,
-  preferredIndex = 3,
-}
-
-StaticPopupDialogs["LATABERNA_CLOSE"] = {
-  text = "La Taberna: ¿cerrar la sesión para todos los participantes?",
-  button1 = "Cerrar sesión",
-  button2 = "Cancelar",
-  OnAccept = function()
-    Session.Close()
   end,
   timeout = 0,
   whileDead = true,
@@ -58,6 +45,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     Protocol.SetSender(Session.PlayerName())
     LaTaberna.Comm.Init()
     LaTaberna.UI.Init()
+    LaTaberna.Stats.Init()
     if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
       C_GuildInfo.GuildRoster()
     end
@@ -69,6 +57,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
       if s and not Session.IsOrganizer() then
         -- Pedir el estado actual al organizador tras entrar o reconectar
         LaTaberna.Comm.SendGuild("SREQ", s.id, nil, Session.PlayerAccount())
+        -- Republicar nuestros contadores para quien no los tenga
+        LaTaberna.Stats.ReportAll()
       elseif not s then
         -- Descubrir si hay una liga activa en la hermandad
         LaTaberna.Comm.SendGuild("DISC", "-", nil, Session.PlayerAccount())
@@ -89,8 +79,11 @@ local function PrintHelp()
   print("  /taberna — abre o cierra la ventana")
   print("  /taberna crear — crea una sesión (serás el organizador)")
   print("  /taberna salir — sale de la sesión (el organizador la cierra para todos)")
+  print("  /taberna unirse <código> — te unes a una liga con su código de invitación")
   print("  /taberna export — muestra un respaldo copiable de la sesión")
   print("  /taberna import — importa un respaldo")
+  print("  /taberna stat <id> — diagnóstico: muestra GetStatistic(id)")
+  print("  /taberna scanstats <desde> <hasta> — diagnóstico: estadísticas con valor")
 end
 
 SLASH_LATABERNA1 = "/taberna"
@@ -104,10 +97,33 @@ SlashCmdList["LATABERNA"] = function(msg)
     Session.Create()
   elseif cmd == "salir" then
     Session.Leave()
+  elseif cmd == "unirse" then
+    Session.JoinByCode(msg:match("^%S+%s+(.+)$"))
   elseif cmd == "export" then
     LaTaberna.UI.ShowExport()
   elseif cmd == "import" then
     LaTaberna.UI.ShowImport()
+  elseif cmd == "stat" then
+    local id = tonumber(msg:match("^%S+%s+(%d+)") or "")
+    if id and GetStatistic then
+      local ok, value = pcall(GetStatistic, id)
+      print("GetStatistic(" .. id .. ") =", ok and value or "<error>")
+    else
+      print("Uso: /taberna stat <id numérico>")
+    end
+  elseif cmd == "scanstats" then
+    local from, to = msg:match("^%S+%s+(%d+)%s+(%d+)")
+    from, to = tonumber(from), tonumber(to)
+    if from and to and GetStatistic then
+      for id = from, to do
+        local ok, value = pcall(GetStatistic, id)
+        if ok and type(value) == "string" and value ~= "" and value ~= "0" then
+          print("stat " .. id .. " = " .. value)
+        end
+      end
+    else
+      print("Uso: /taberna scanstats <desde> <hasta>")
+    end
   else
     PrintHelp()
   end

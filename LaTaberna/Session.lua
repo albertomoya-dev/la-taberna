@@ -112,6 +112,7 @@ local function NewSessionState(id, organizer)
     participants = {},
     challenges = {},
     results = {},
+    stats = {},      -- contadores por cuenta: kills, duels, rares
     seenEvents = {},
   }
 end
@@ -158,6 +159,20 @@ end
 function Session.DeclineJoin(sid)
   declinedSids[sid] = true
   pendingJoinSid = nil
+end
+
+-- Unirse con un código de invitación (el id de sesión que comparte el líder).
+function Session.JoinByCode(code)
+  code = strtrim(code or "")
+  if Session.Active() then
+    Print("Ya estás en una sesión.")
+    return
+  end
+  if code == "" or not code:find(":", 1, true) then
+    Print("Código de invitación no válido.")
+    return
+  end
+  Session.AcceptJoin(code)
 end
 
 function Session.Leave()
@@ -278,6 +293,51 @@ local function RemoveParticipant(account)
   s.participants[account] = nil
 end
 
+-- Aplica un contador reportado por otro participante (los contadores son
+-- monótonos: nos quedamos siempre con el valor mayor).
+function Session.ReportStat(account, kind, value)
+  local s = Session.Active()
+  if not s then
+    return
+  end
+  if kind ~= "kills" and kind ~= "duels" and kind ~= "rares" then
+    return
+  end
+  if not s.participants[account] then
+    return
+  end
+  if type(s.stats) ~= "table" then
+    s.stats = {}
+  end
+  local entry = s.stats[account] or {}
+  if (entry[kind] or 0) < value then
+    entry[kind] = value
+  end
+  s.stats[account] = entry
+  Refresh()
+end
+
+-- Reinicia puntos y estadísticas para todos (solo organizador).
+function Session.ResetLeague()
+  local s = Session.Active()
+  if not s or not Session.IsOrganizer() then
+    return
+  end
+  Session.ApplyReset(s.id)
+  LaTaberna.Comm.SendGuild("RESET", s.id, nil, Session.PlayerAccount())
+end
+
+function Session.ApplyReset(sid)
+  local s = Session.Active()
+  if not s or s.id ~= sid then
+    return
+  end
+  s.results = {}
+  s.stats = {}
+  Print("El organizador ha reiniciado la liga: puntos y estadísticas a cero.")
+  Refresh()
+end
+
 function Session.BuildSnapshot()
   local s = Session.Active()
   if not s then
@@ -290,6 +350,7 @@ function Session.BuildSnapshot()
     participants = s.participants,
     challenges = s.challenges,
     results = s.results,
+    stats = s.stats,
   }
 end
 
@@ -306,6 +367,7 @@ function Session.ApplySnapshot(sid, sender, data)
   s.participants = snap.participants
   s.challenges = type(snap.challenges) == "table" and snap.challenges or {}
   s.results = type(snap.results) == "table" and snap.results or {}
+  s.stats = type(snap.stats) == "table" and snap.stats or {}
   for account, p in pairs(s.participants) do
     if type(p.alts) == "table" then
       for char in pairs(p.alts) do
@@ -418,6 +480,14 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
   elseif op == "SREQ" then
     if s and s.id == sid and Session.IsOrganizer() then
       LaTaberna.Comm.SendSnapshotTo(sender)
+    end
+  elseif op == "STAT" then
+    if s and s.id == sid then
+      Session.ReportStat(senderAccount, f[2], tonumber(f[3]) or 0)
+    end
+  elseif op == "RESET" then
+    if s and s.id == sid and senderAccount == s.organizer then
+      Session.ApplyReset(sid)
     end
   elseif op == "CLOSE" then
     if s and s.id == sid and senderAccount == s.organizer then

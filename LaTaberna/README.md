@@ -46,7 +46,9 @@ usa el canal de addon `GUILD`.
 - `Session.lua` — participantes, rol de organizador y aplicación de eventos.
 - `Communication.lua` — cola con prioridad y ritmo limitado, snapshots
   troceados por susurro.
-- `UI.lua` — ventana con pestañas (Clasificación, Retos, Sesión).
+- `Stats.lua` — contadores de enemigos, duelos y rares (registro de combate y
+  mensajes de duelo, con protección ante valores secretos) y su difusión.
+- `UI.lua` — ventana con pestañas (Clasificación, Liga, Retos, Sesión).
 - `Core.lua` — inicialización, eventos y comandos.
 
 El id de sesión es `CuentaOrganizador:timestamp`, así que cualquier mensaje

@@ -15,9 +15,10 @@ local CHUNK_SIZE = 100    -- bytes de datos por trozo de snapshot (antes de esca
 
 -- Prioridad baja = se envía antes. Los resultados mandan sobre los snapshots.
 local PRIORITY = {
-  RES = 1, CHAL = 1, PART = 1, CLOSE = 1,
+  RES = 1, CHAL = 1, PART = 1, CLOSE = 1, RESET = 1,
   JOIN = 2, LEAVE = 2, SREQ = 2,
   HELLO = 3, DISC = 3,
+  STAT = 4,
   SNAP = 5,
 }
 
