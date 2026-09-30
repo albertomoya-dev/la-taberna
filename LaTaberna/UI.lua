@@ -1,0 +1,566 @@
+-- UI.lua: ventana principal con pestañas (Lua puro, sin XML).
+LaTaberna = LaTaberna or {}
+
+local Rules = LaTaberna.Rules
+local Session = LaTaberna.Session
+
+local UI = {}
+LaTaberna.UI = UI
+
+local ADDON_VERSION = "0.1.0"
+local MAX_ROWS = 21       -- filas visibles de la clasificación
+local PICKER_ROWS = 20    -- participantes seleccionables a la vez
+
+local main
+local tabButtons = {}
+local tabFrames = {}
+local currentTab = 1
+
+-- Referencias que se rellenan al crear los frames
+local lbRows = {}
+local lbHeader
+local challengeBlocks = {}
+local sessionLines = {}
+local sessionButtons = {}
+local picker
+local editDialog
+local textDialog
+
+local TAB_NAMES = { "Clasificación", "Retos", "Sesión" }
+
+-- ---------------------------------------------------------------------------
+-- Utilidades de construcción
+-- ---------------------------------------------------------------------------
+
+local function MakeButton(parent, text, width, height)
+  local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+  b:SetSize(width, height)
+  b:SetText(text)
+  return b
+end
+
+local function MakeLabel(parent, template, width)
+  local fs = parent:CreateFontString(nil, "OVERLAY", template or "GameFontNormal")
+  fs:SetJustifyH("LEFT")
+  fs:SetWordWrap(true)
+  if width then
+    fs:SetWidth(width)
+  end
+  return fs
+end
+
+-- ---------------------------------------------------------------------------
+-- Pestaña 1: Clasificación
+-- ---------------------------------------------------------------------------
+
+local function CreateLeaderboardTab(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  lbHeader = MakeLabel(f, "GameFontHighlight")
+  lbHeader:SetPoint("TOPLEFT", 8, -8)
+
+  for i = 1, MAX_ROWS do
+    local y = -30 - (i - 1) * 16
+    local rank = MakeLabel(f, "GameFontDisableSmall")
+    rank:SetPoint("TOPLEFT", 8, y)
+    rank:SetWidth(28)
+    local name = MakeLabel(f, "GameFontNormal")
+    name:SetPoint("TOPLEFT", 40, y)
+    name:SetWidth(300)
+    local points = MakeLabel(f, "GameFontHighlight")
+    points:SetPoint("TOPLEFT", 348, y)
+    points:SetWidth(100)
+    lbRows[i] = { rank = rank, name = name, points = points }
+  end
+  return f
+end
+
+local function RefreshLeaderboard()
+  local s = Session.Active()
+  if not s then
+    lbHeader:SetText("Sin sesión activa. Crea una o espera una invitación.")
+    for _, row in ipairs(lbRows) do
+      row.rank:SetText("")
+      row.name:SetText("")
+      row.points:SetText("")
+    end
+    return
+  end
+  lbHeader:SetText("Clasificación de la liga")
+  local board = Rules.ComputeLeaderboard(s)
+  for i, row in ipairs(lbRows) do
+    local entry = board[i]
+    if entry then
+      row.rank:SetText(i .. ".")
+      row.name:SetText(entry.name)
+      row.points:SetText(entry.points .. " pt")
+    else
+      row.rank:SetText("")
+      row.name:SetText("")
+      row.points:SetText("")
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Pestaña 2: Retos
+-- ---------------------------------------------------------------------------
+
+local function CreateChallengesTab(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  for i = 1, Rules.MAX_ACTIVE_CHALLENGES do
+    local y = -10 - (i - 1) * 110
+    local block = {}
+
+    block.title = MakeLabel(f, "GameFontNormalLarge", 300)
+    block.title:SetPoint("TOPLEFT", 8, y)
+
+    block.points = MakeLabel(f, "GameFontHighlight")
+    block.points:SetPoint("TOPRIGHT", -12, y)
+
+    block.desc = MakeLabel(f, "GameFontDisableSmall", 330)
+    block.desc:SetPoint("TOPLEFT", block.title, "BOTTOMLEFT", 0, -4)
+
+    block.confirm = MakeButton(f, "Confirmar…", 100, 20)
+    block.confirm:SetPoint("TOPLEFT", block.desc, "BOTTOMLEFT", 0, -8)
+
+    block.edit = MakeButton(f, "Editar", 80, 20)
+    block.edit:SetPoint("LEFT", block.confirm, "RIGHT", 8, 0)
+
+    challengeBlocks[i] = block
+  end
+  return f
+end
+
+local function RefreshChallenges()
+  local s = Session.Active()
+  local isOrganizer = Session.IsOrganizer()
+  for i, block in ipairs(challengeBlocks) do
+    local c = s and s.challenges[i] or nil
+    if c then
+      block.title:SetText(c.title)
+      block.points:SetText(c.points .. " pt")
+      block.desc:SetText(c.desc or "")
+      block.confirm:SetScript("OnClick", function()
+        UI.ShowParticipantPicker(c.id)
+      end)
+      block.edit:SetScript("OnClick", function()
+        UI.ShowEditChallenge(c)
+      end)
+      block.confirm:SetShown(isOrganizer)
+      block.edit:SetShown(isOrganizer)
+    else
+      block.title:SetText("")
+      block.points:SetText("")
+      block.desc:SetText((not s and i == 1) and "Sin sesión activa." or "")
+      block.confirm:Hide()
+      block.edit:Hide()
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Pestaña 3: Sesión
+-- ---------------------------------------------------------------------------
+
+local function CreateSessionTab(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  for i = 1, 7 do
+    local line = MakeLabel(f, i == 1 and "GameFontHighlight" or "GameFontNormal", 440)
+    line:SetPoint("TOPLEFT", 8, -10 - (i - 1) * 22)
+    sessionLines[i] = line
+  end
+
+  sessionButtons.create = MakeButton(f, "Crear sesión", 120, 24)
+  sessionButtons.create:SetPoint("TOPLEFT", 8, -180)
+  sessionButtons.create:SetScript("OnClick", function()
+    Session.Create()
+  end)
+
+  sessionButtons.leave = MakeButton(f, "Salir", 80, 24)
+  sessionButtons.leave:SetPoint("LEFT", sessionButtons.create, "RIGHT", 8, 0)
+  sessionButtons.leave:SetScript("OnClick", function()
+    Session.Leave()
+  end)
+
+  sessionButtons.close = MakeButton(f, "Cerrar sesión", 120, 24)
+  sessionButtons.close:SetPoint("LEFT", sessionButtons.leave, "RIGHT", 8, 0)
+  sessionButtons.close:SetScript("OnClick", function()
+    StaticPopup_Show("LATABERNA_CLOSE")
+  end)
+
+  sessionButtons.export = MakeButton(f, "Exportar", 90, 24)
+  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -10)
+  sessionButtons.export:SetScript("OnClick", function()
+    UI.ShowExport()
+  end)
+
+  sessionButtons.import = MakeButton(f, "Importar", 90, 24)
+  sessionButtons.import:SetPoint("LEFT", sessionButtons.export, "RIGHT", 8, 0)
+  sessionButtons.import:SetScript("OnClick", function()
+    UI.ShowImport()
+  end)
+
+  return f
+end
+
+local function RefreshSessionTab()
+  local s = Session.Active()
+  for _, line in ipairs(sessionLines) do
+    line:SetText("")
+  end
+  if s then
+    local count = 0
+    for _ in pairs(s.participants) do
+      count = count + 1
+    end
+    sessionLines[1]:SetText("Sesión activa")
+    sessionLines[2]:SetText("Organizador: " .. (s.organizer or "?"))
+    sessionLines[3]:SetText("Tu rol: " .. (Session.IsOrganizer() and "organizador" or "participante"))
+    sessionLines[4]:SetText("Participantes: " .. count)
+    local online = Session.IsOrganizerOnline()
+    sessionLines[5]:SetText("Confirmaciones: "
+      .. (online and "disponibles" or "en pausa (organizador desconectado)"))
+    sessionLines[6]:SetText("Resultados confirmados: " .. #s.results)
+  else
+    sessionLines[1]:SetText("Sin sesión activa")
+    sessionLines[2]:SetText("Crea una sesión o espera a que el organizador te invite.")
+  end
+  sessionLines[7]:SetText("Versión del addon: " .. ADDON_VERSION
+    .. " · protocolo: " .. LaTaberna.Protocol.VERSION)
+
+  sessionButtons.create:SetShown(s == nil)
+  sessionButtons.leave:SetShown(s ~= nil and not Session.IsOrganizer())
+  sessionButtons.close:SetShown(s ~= nil and Session.IsOrganizer())
+  sessionButtons.export:SetShown(s ~= nil)
+end
+
+-- ---------------------------------------------------------------------------
+-- Selector de participante (confirmar resultado)
+-- ---------------------------------------------------------------------------
+
+local function CreatePicker()
+  local f = CreateFrame("Frame", "LaTabernaPicker", main, "BackdropTemplateMixin and BackdropTemplate")
+  f:SetSize(260, 480)
+  f:SetPoint("CENTER")
+  f:SetFrameStrata("FULLSCREEN_DIALOG")
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 24,
+    insets = { left = 6, right = 6, top = 6, bottom = 6 },
+  })
+  f:EnableMouse(true)
+  f:Hide()
+
+  f.title = MakeLabel(f, "GameFontHighlight", 220)
+  f.title:SetPoint("TOPLEFT", 14, -12)
+
+  f.rows = {}
+  for i = 1, PICKER_ROWS do
+    local b = MakeButton(f, "", 220, 18)
+    b:SetPoint("TOPLEFT", 16, -36 - (i - 1) * 20)
+    f.rows[i] = b
+  end
+
+  f.cancel = MakeButton(f, "Cancelar", 100, 22)
+  f.cancel:SetPoint("BOTTOM", 0, 10)
+  f.cancel:SetScript("OnClick", function()
+    f:Hide()
+  end)
+
+  return f
+end
+
+function UI.ShowParticipantPicker(challengeId)
+  local s = Session.Active()
+  if not s then
+    return
+  end
+  local challenge = Rules.GetChallenge(s, challengeId)
+  picker.title:SetText("¿Quién completó «" .. (challenge and challenge.title or "?") .. "»?")
+  local names = {}
+  for name in pairs(s.participants) do
+    names[#names + 1] = name
+  end
+  table.sort(names)
+  for i, b in ipairs(picker.rows) do
+    local name = names[i]
+    if name then
+      b:SetText(name)
+      b:SetScript("OnClick", function()
+        Session.ConfirmResult(challengeId, name)
+        picker:Hide()
+      end)
+      b:Show()
+    else
+      b:Hide()
+    end
+  end
+  picker:Show()
+end
+
+-- ---------------------------------------------------------------------------
+-- Diálogo de edición de reto
+-- ---------------------------------------------------------------------------
+
+local function MakeEditBox(parent, width)
+  local eb = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+  eb:SetSize(width, 24)
+  eb:SetAutoFocus(false)
+  return eb
+end
+
+local function CreateEditDialog()
+  local f = CreateFrame("Frame", "LaTabernaEditChallenge", main, "BackdropTemplateMixin and BackdropTemplate")
+  f:SetSize(360, 240)
+  f:SetPoint("CENTER")
+  f:SetFrameStrata("FULLSCREEN_DIALOG")
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 24,
+    insets = { left = 6, right = 6, top = 6, bottom = 6 },
+  })
+  f:EnableMouse(true)
+  f:Hide()
+
+  f.title = MakeLabel(f, "GameFontHighlight")
+  f.title:SetPoint("TOPLEFT", 16, -14)
+  f.title:SetText("Editar reto")
+
+  local l1 = MakeLabel(f, "GameFontNormal")
+  l1:SetPoint("TOPLEFT", 16, -40)
+  l1:SetText("Título")
+  f.ebTitle = MakeEditBox(f, 320)
+  f.ebTitle:SetPoint("TOPLEFT", 20, -58)
+
+  local l2 = MakeLabel(f, "GameFontNormal")
+  l2:SetPoint("TOPLEFT", 16, -92)
+  l2:SetText("Descripción")
+  f.ebDesc = MakeEditBox(f, 320)
+  f.ebDesc:SetPoint("TOPLEFT", 20, -110)
+
+  local l3 = MakeLabel(f, "GameFontNormal")
+  l3:SetPoint("TOPLEFT", 16, -144)
+  l3:SetText("Puntos")
+  f.ebPoints = MakeEditBox(f, 60)
+  f.ebPoints:SetPoint("TOPLEFT", 20, -162)
+  f.ebPoints:SetNumeric(true)
+
+  f.save = MakeButton(f, "Guardar", 100, 24)
+  f.save:SetPoint("BOTTOMLEFT", 60, 14)
+  f.cancel = MakeButton(f, "Cancelar", 100, 24)
+  f.cancel:SetPoint("BOTTOMRIGHT", -60, 14)
+  f.cancel:SetScript("OnClick", function()
+    f:Hide()
+  end)
+
+  return f
+end
+
+function UI.ShowEditChallenge(challenge)
+  editDialog.challengeId = challenge.id
+  editDialog.ebTitle:SetText(challenge.title or "")
+  editDialog.ebDesc:SetText(challenge.desc or "")
+  editDialog.ebPoints:SetText(tostring(challenge.points or 0))
+  editDialog.save:SetScript("OnClick", function()
+    local title = strtrim(editDialog.ebTitle:GetText() or "")
+    local desc = strtrim(editDialog.ebDesc:GetText() or "")
+    local points = tonumber(editDialog.ebPoints:GetText()) or 0
+    if title == "" or points <= 0 then
+      Session.Print("El reto necesita un título y puntos mayores que cero.")
+      return
+    end
+    Session.UpdateChallenge(editDialog.challengeId, title, desc, points)
+    editDialog:Hide()
+  end)
+  editDialog:Show()
+end
+
+-- ---------------------------------------------------------------------------
+-- Diálogo de texto (exportar / importar)
+-- ---------------------------------------------------------------------------
+
+local function CreateTextDialog()
+  local f = CreateFrame("Frame", "LaTabernaTextDialog", main, "BackdropTemplateMixin and BackdropTemplate")
+  f:SetSize(460, 300)
+  f:SetPoint("CENTER")
+  f:SetFrameStrata("FULLSCREEN_DIALOG")
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 24,
+    insets = { left = 6, right = 6, top = 6, bottom = 6 },
+  })
+  f:EnableMouse(true)
+  f:Hide()
+
+  f.title = MakeLabel(f, "GameFontHighlight", 420)
+  f.title:SetPoint("TOPLEFT", 14, -12)
+
+  local scroll = CreateFrame("ScrollFrame", "LaTabernaTextScroll", f, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", 14, -36)
+  scroll:SetPoint("BOTTOMRIGHT", -34, 46)
+
+  local eb = CreateFrame("EditBox", nil, scroll)
+  eb:SetMultiLine(true)
+  eb:SetAutoFocus(false)
+  eb:SetFontObject(GameFontHighlightSmall)
+  eb:SetWidth(390)
+  eb:SetScript("OnEscapePressed", function()
+    f:Hide()
+  end)
+  scroll:SetScrollChild(eb)
+  f.editBox = eb
+
+  f.action = MakeButton(f, "Aceptar", 110, 24)
+  f.action:SetPoint("BOTTOMLEFT", 80, 12)
+
+  f.close = MakeButton(f, "Cerrar", 110, 24)
+  f.close:SetPoint("BOTTOMRIGHT", -80, 12)
+  f.close:SetScript("OnClick", function()
+    f:Hide()
+  end)
+
+  return f
+end
+
+function UI.ShowExport()
+  local data = LaTaberna.Storage.ExportSession()
+  if not data then
+    Session.Print("No hay sesión activa que exportar.")
+    return
+  end
+  textDialog.title:SetText("Copia este texto y guárdalo como respaldo")
+  textDialog.editBox:SetText(data)
+  textDialog.editBox:HighlightText()
+  textDialog.editBox:SetFocus()
+  textDialog.action:Hide()
+  textDialog:Show()
+end
+
+function UI.ShowImport()
+  textDialog.title:SetText("Pega aquí un respaldo y pulsa Importar")
+  textDialog.editBox:SetText("")
+  textDialog.action:SetText("Importar")
+  textDialog.action:SetScript("OnClick", function()
+    local ok, err = LaTaberna.Storage.ImportSession(textDialog.editBox:GetText())
+    if ok then
+      Session.Print("Respaldo importado correctamente.")
+      textDialog:Hide()
+      UI.Refresh()
+    else
+      Session.Print("No se pudo importar: " .. (err or "error desconocido."))
+    end
+  end)
+  textDialog.action:Show()
+  textDialog:Show()
+end
+
+-- ---------------------------------------------------------------------------
+-- Ventana principal
+-- ---------------------------------------------------------------------------
+
+local function SelectTab(index)
+  currentTab = index
+  for i, b in ipairs(tabButtons) do
+    if i == index then
+      b:Disable()
+    else
+      b:Enable()
+    end
+  end
+  for i, f in ipairs(tabFrames) do
+    f:SetShown(i == index)
+  end
+end
+
+local function CreateMainFrame()
+  local f = CreateFrame("Frame", "LaTabernaFrame", UIParent, "BackdropTemplateMixin and BackdropTemplate")
+  f:SetSize(520, 460)
+  f:SetPoint("CENTER")
+  f:SetMovable(true)
+  f:EnableMouse(true)
+  f:RegisterForDrag("LeftButton")
+  f:SetScript("OnDragStart", f.StartMoving)
+  f:SetScript("OnDragStop", f.StopMovingOrSizing)
+  f:SetFrameStrata("DIALOG")
+  f:SetClampedToScreen(true)
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 8, right = 8, top = 8, bottom = 8 },
+  })
+  tinsert(UISpecialFrames, "LaTabernaFrame")
+  f:Hide()
+
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", 0, -16)
+  title:SetText("La Taberna")
+
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", -6, -6)
+
+  for i, name in ipairs(TAB_NAMES) do
+    local b = MakeButton(f, name, 120, 22)
+    b:SetPoint("TOPLEFT", 16 + (i - 1) * 128, -40)
+    tabButtons[i] = b
+    b:SetScript("OnClick", function()
+      SelectTab(i)
+    end)
+  end
+
+  for i = 1, #TAB_NAMES do
+    local content = CreateFrame("Frame", nil, f)
+    content:SetPoint("TOPLEFT", 16, -70)
+    content:SetPoint("BOTTOMRIGHT", -16, 16)
+    tabFrames[i] = content
+  end
+
+  CreateLeaderboardTab(tabFrames[1])
+  CreateChallengesTab(tabFrames[2])
+  CreateSessionTab(tabFrames[3])
+
+  return f
+end
+
+-- ---------------------------------------------------------------------------
+-- API pública de UI
+-- ---------------------------------------------------------------------------
+
+function UI.Init()
+  main = CreateMainFrame()
+  picker = CreatePicker()
+  editDialog = CreateEditDialog()
+  textDialog = CreateTextDialog()
+  SelectTab(1)
+  UI.Refresh()
+end
+
+function UI.Toggle()
+  if not main then
+    return
+  end
+  if main:IsShown() then
+    main:Hide()
+  else
+    UI.Refresh()
+    main:Show()
+  end
+end
+
+function UI.Refresh()
+  if not main then
+    return
+  end
+  RefreshLeaderboard()
+  RefreshChallenges()
+  RefreshSessionTab()
+end

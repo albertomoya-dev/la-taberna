@@ -1,0 +1,15 @@
+## Interface: 110100
+## Title: La Taberna
+## Notes: Liga privada de retos para tu grupo de amigos.
+## Author: La Taberna
+## Version: 0.1.0
+## SavedVariables: LaTabernaDB
+## IconTexture: Interface\Icons\INV_Misc_Beer_01
+
+Rules.lua
+Protocol.lua
+Storage.lua
+Session.lua
+Communication.lua
+UI.lua
+Core.lua
