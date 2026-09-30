@@ -2,7 +2,7 @@
 ## Title: La Taberna
 ## Notes: Liga privada de retos para tu grupo de amigos.
 ## Author: La Taberna
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: LaTabernaDB
 ## IconTexture: Interface\Icons\INV_Misc_Beer_01
 

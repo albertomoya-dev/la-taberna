@@ -4,7 +4,7 @@ LaTaberna = LaTaberna or {}
 local Protocol = {}
 LaTaberna.Protocol = Protocol
 
-Protocol.VERSION = 1
+Protocol.VERSION = 2
 Protocol.PREFIX = "LATABERNA" -- máx. 16 caracteres
 Protocol.MAX_MESSAGE = 250    -- el límite real es 255; margen de seguridad
 

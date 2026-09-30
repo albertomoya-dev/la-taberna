@@ -49,10 +49,12 @@ usa el canal de addon `GUILD`.
 - `UI.lua` — ventana con pestañas (Clasificación, Retos, Sesión).
 - `Core.lua` — inicialización, eventos y comandos.
 
-El id de sesión es `Organizador-Reino:timestamp`, así que cualquier mensaje
-identifica a su autoridad. Cada resultado lleva un id de evento único y los
-duplicados se descartan. Al entrar o reconectar, el cliente pide el estado
-(`SREQ`) y el organizador responde con un snapshot troceado (`SNAP`).
+El id de sesión es `CuentaOrganizador:timestamp`, así que cualquier mensaje
+identifica a su autoridad. La identidad es **por cuenta** (BattleTag vía
+`BNGetInfo`); si la API no está disponible se usa el personaje como fallback.
+Cada resultado lleva un id de evento único y los duplicados se descartan. Al
+entrar o reconectar, el cliente pide el estado (`SREQ`) y el organizador
+responde con un snapshot troceado (`SNAP`).
 
 ## Checklist de pruebas en el cliente (Forever)
 

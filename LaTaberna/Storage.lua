@@ -4,7 +4,7 @@ LaTaberna = LaTaberna or {}
 local Storage = {}
 LaTaberna.Storage = Storage
 
-Storage.SCHEMA_VERSION = 1
+Storage.SCHEMA_VERSION = 2
 
 local function Defaults()
   return {
@@ -32,6 +32,18 @@ end
 
 -- Punto de entrada para futuras migraciones entre versiones de esquema.
 function Storage.Migrate()
+  local old = LaTabernaDB.schemaVersion or 1
+  if old < 2 and type(LaTabernaDB.session) == "table" then
+    -- v1 guardaba participantes por personaje; v2 lo hace por cuenta.
+    -- Se archiva la sesión antigua y se empieza limpio.
+    LaTabernaDB.history[#LaTabernaDB.history + 1] = {
+      id = LaTabernaDB.session.id,
+      organizer = LaTabernaDB.session.organizer,
+      closedAt = time(),
+      note = "Archivada al migrar a identidad por cuenta (v2).",
+    }
+    LaTabernaDB.session = nil
+  end
   LaTabernaDB.schemaVersion = Storage.SCHEMA_VERSION
 end
 

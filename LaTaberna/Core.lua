@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.1.0"
+Core.VERSION = "0.2.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -64,14 +64,14 @@ events:SetScript("OnEvent", function(_, event, arg1)
     events:RegisterEvent("GUILD_ROSTER_UPDATE")
     -- Pequeña espera a que el canal de hermandad esté listo
     C_Timer.After(3, function()
-      LaTaberna.Comm.SendGuild("HELLO", "-", nil, Core.VERSION)
+      LaTaberna.Comm.SendGuild("HELLO", "-", nil, Session.PlayerAccount(), Core.VERSION)
       local s = Session.Active()
       if s and not Session.IsOrganizer() then
         -- Pedir el estado actual al organizador tras entrar o reconectar
-        LaTaberna.Comm.SendGuild("SREQ", s.id)
+        LaTaberna.Comm.SendGuild("SREQ", s.id, nil, Session.PlayerAccount())
       elseif not s then
         -- Descubrir si hay una liga activa en la hermandad
-        LaTaberna.Comm.SendGuild("DISC", "-")
+        LaTaberna.Comm.SendGuild("DISC", "-", nil, Session.PlayerAccount())
       end
     end)
 

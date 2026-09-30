@@ -55,13 +55,14 @@ function Comm.SendWhisper(target, op, sid, eid, ...)
 end
 
 -- Anuncia la lista de retos; un mensaje por reto para no exceder el límite.
+-- Todas las operaciones llevan la cuenta del emisor como primer campo.
 function Comm.BroadcastChallenge(challenge)
   local s = Session.Active()
   if not s then
     return
   end
-  Comm.SendGuild("CHAL", s.id, nil, challenge.id, challenge.title,
-    challenge.desc or "", tostring(challenge.points))
+  Comm.SendGuild("CHAL", s.id, nil, Session.PlayerAccount(), challenge.id,
+    challenge.title, challenge.desc or "", tostring(challenge.points))
 end
 
 function Comm.BroadcastChallenges()
@@ -80,24 +81,25 @@ function Comm.SendChallengesTo(target)
     return
   end
   for _, c in ipairs(s.challenges) do
-    Comm.SendWhisper(target, "CHAL", s.id, nil, c.id, c.title, c.desc or "", tostring(c.points))
+    Comm.SendWhisper(target, "CHAL", s.id, nil, Session.PlayerAccount(), c.id,
+      c.title, c.desc or "", tostring(c.points))
   end
 end
 
-function Comm.BroadcastParticipantAdd(name)
+function Comm.BroadcastParticipantAdd(account, charName)
   local s = Session.Active()
   if not s then
     return
   end
-  Comm.SendGuild("PART", s.id, nil, "add", name)
+  Comm.SendGuild("PART", s.id, nil, Session.PlayerAccount(), "add", account, charName or "")
 end
 
-function Comm.BroadcastParticipantRemove(name)
+function Comm.BroadcastParticipantRemove(account)
   local s = Session.Active()
   if not s then
     return
   end
-  Comm.SendGuild("PART", s.id, nil, "remove", name)
+  Comm.SendGuild("PART", s.id, nil, Session.PlayerAccount(), "remove", account, "")
 end
 
 -- Snapshot completo por susurro, troceado. Solo lo envía el organizador.
@@ -114,7 +116,8 @@ function Comm.SendSnapshotTo(target)
   end
   for i = 1, total do
     local chunk = data:sub((i - 1) * CHUNK_SIZE + 1, i * CHUNK_SIZE)
-    Comm.SendWhisper(target, "SNAP", snap.id, snapId, tostring(i), tostring(total), chunk)
+    Comm.SendWhisper(target, "SNAP", snap.id, snapId, tostring(i), tostring(total),
+      Session.PlayerAccount(), chunk)
   end
 end
 
@@ -125,7 +128,8 @@ end
 function Comm.OnSnapChunk(sid, snapId, f, sender)
   local seq = tonumber(f[1])
   local total = tonumber(f[2])
-  if not seq or not total or not f[3] then
+  -- f[3] es la cuenta del emisor; f[4] el trozo de datos
+  if not seq or not total or not f[4] then
     return
   end
   local key = sender .. "|" .. tostring(snapId)
@@ -135,7 +139,7 @@ function Comm.OnSnapChunk(sid, snapId, f, sender)
     snapshots[key] = entry
   end
   if not entry.chunks[seq] then
-    entry.chunks[seq] = f[3]
+    entry.chunks[seq] = f[4]
     entry.count = entry.count + 1
   end
   if entry.count >= entry.total then

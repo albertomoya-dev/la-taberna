@@ -7,7 +7,7 @@ local Session = LaTaberna.Session
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.1.0"
+local ADDON_VERSION = "0.2.0"
 local MAX_ROWS = 21       -- filas visibles de la clasificación
 local PICKER_ROWS = 20    -- participantes seleccionables a la vez
 
@@ -234,7 +234,8 @@ local function RefreshSessionTab()
     end
     sessionLines[1]:SetText("Sesión activa")
     sessionLines[2]:SetText("Organizador: " .. (s.organizer or "?"))
-    sessionLines[3]:SetText("Tu rol: " .. (Session.IsOrganizer() and "organizador" or "participante"))
+    sessionLines[3]:SetText("Tu rol: " .. (Session.IsOrganizer() and "organizador" or "participante")
+      .. " · tu cuenta: " .. Session.PlayerAccount())
     sessionLines[4]:SetText("Participantes: " .. count)
     local online = Session.IsOrganizerOnline()
     sessionLines[5]:SetText("Confirmaciones: "

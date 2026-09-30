@@ -1,4 +1,6 @@
 -- Session.lua: ciclo de vida de la sesión, participantes y aplicación de eventos.
+-- La identidad de la liga es la CUENTA (BattleTag), no el personaje: da igual
+-- con qué personaje entre cada uno, sus puntos son los mismos.
 LaTaberna = LaTaberna or {}
 
 local Rules = LaTaberna.Rules
@@ -12,6 +14,7 @@ LaTaberna.Session = Session
 local pendingJoinSid = nil
 local declinedSids = {}
 local warnedPeers = {}
+local charToAccount = {} -- personaje ("Nombre-Reino") -> cuenta (BattleTag)
 
 local function Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cffe6c34aLa Taberna:|r " .. msg)
@@ -32,6 +35,18 @@ function Session.PlayerName()
   return name .. "-" .. realm
 end
 
+-- Cuenta del jugador local: BattleTag si la API está disponible;
+-- si no, se usa el personaje como identidad (fallback).
+function Session.PlayerAccount()
+  if BNGetInfo then
+    local _, battleTag = BNGetInfo()
+    if type(battleTag) == "string" and battleTag:find("#", 1, true) then
+      return battleTag
+    end
+  end
+  return Session.PlayerName()
+end
+
 function Session.NormalizeName(name)
   if not name then
     return name
@@ -42,7 +57,23 @@ function Session.NormalizeName(name)
   return name
 end
 
--- El id de sesión es "Organizador-Reino:timestamp"; de ahí sale el organizador.
+local function NoteIdentity(charName, account)
+  if type(charName) == "string" and type(account) == "string" and account ~= "" then
+    charToAccount[Session.NormalizeName(charName)] = account
+  end
+end
+
+-- Cuenta asociada a un personaje. Si no la conocemos, el propio nombre del
+-- personaje actúa como cuenta (compatible con el fallback).
+function Session.AccountOf(charName)
+  charName = Session.NormalizeName(charName)
+  if charName == Session.PlayerName() then
+    return Session.PlayerAccount()
+  end
+  return charToAccount[charName] or charName
+end
+
+-- El id de sesión es "CuentaOrganizador:timestamp"; de ahí sale la autoridad.
 function Session.OrganizerFromId(sid)
   if type(sid) ~= "string" then
     return nil
@@ -56,7 +87,7 @@ end
 
 function Session.IsOrganizer()
   local s = Session.Active()
-  return s ~= nil and s.organizer == Session.PlayerName()
+  return s ~= nil and s.organizer == Session.PlayerAccount()
 end
 
 local function ArchiveSession(s)
@@ -94,15 +125,16 @@ function Session.Create()
     Print("Ya hay una sesión activa. Ciérrala antes de crear otra.")
     return
   end
-  local me = Session.PlayerName()
+  local me = Session.PlayerAccount()
+  local myChar = Session.PlayerName()
   local s = NewSessionState(me .. ":" .. time(), me)
-  s.participants[me] = { joinedAt = time() }
+  s.participants[me] = { joinedAt = time(), alts = { [myChar] = true } }
   s.challenges = Rules.DefaultChallenges()
   Storage.SetSession(s)
   Print("Sesión creada. Eres el organizador.")
   local Comm = LaTaberna.Comm
   Comm.BroadcastChallenges()
-  Comm.BroadcastParticipantAdd(me)
+  Comm.BroadcastParticipantAdd(me, myChar)
   Refresh()
 end
 
@@ -117,8 +149,8 @@ function Session.AcceptJoin(sid)
   Storage.SetSession(NewSessionState(sid, organizer))
   pendingJoinSid = nil
   local Comm = LaTaberna.Comm
-  Comm.SendGuild("JOIN", sid)
-  Comm.SendGuild("SREQ", sid)
+  Comm.SendGuild("JOIN", sid, nil, Session.PlayerAccount())
+  Comm.SendGuild("SREQ", sid, nil, Session.PlayerAccount())
   Print("Te has unido a la liga de " .. organizer .. ".")
   Refresh()
 end
@@ -137,7 +169,7 @@ function Session.Leave()
     Session.Close()
     return
   end
-  LaTaberna.Comm.SendGuild("LEAVE", s.id)
+  LaTaberna.Comm.SendGuild("LEAVE", s.id, nil, Session.PlayerAccount())
   ArchiveSession(s)
   Storage.SetSession(nil)
   Print("Has salido de la sesión.")
@@ -150,7 +182,7 @@ function Session.Close()
   if not s or not Session.IsOrganizer() then
     return
   end
-  LaTaberna.Comm.SendGuild("CLOSE", s.id)
+  LaTaberna.Comm.SendGuild("CLOSE", s.id, nil, Session.PlayerAccount())
   ArchiveSession(s)
   Storage.SetSession(nil)
   Print("Sesión cerrada para todos los participantes.")
@@ -173,6 +205,7 @@ function Session.UpdateChallenge(cid, title, desc, points)
   Refresh()
 end
 
+-- participant es una CUENTA (BattleTag o fallback de personaje).
 function Session.ConfirmResult(challengeId, participant)
   local s = Session.Active()
   if not s or not Session.IsOrganizer() then
@@ -186,8 +219,8 @@ function Session.ConfirmResult(challengeId, participant)
   local eid = Protocol.NewEventId()
   local ts = time()
   Session.ApplyResult(s.id, eid, challengeId, participant, challenge.points, ts)
-  LaTaberna.Comm.SendGuild("RES", s.id, eid, challengeId, participant,
-    tostring(challenge.points), tostring(ts))
+  LaTaberna.Comm.SendGuild("RES", s.id, eid, Session.PlayerAccount(),
+    challengeId, participant, tostring(challenge.points), tostring(ts))
 end
 
 -- ---------------------------------------------------------------------------
@@ -219,21 +252,30 @@ function Session.ApplyResult(sid, eid, challengeId, participant, points, ts)
   Refresh()
 end
 
-local function AddParticipant(name)
+local function AddParticipant(account, charName)
   local s = Session.Active()
-  if not s or s.participants[name] then
+  if not s then
     return false
   end
-  s.participants[name] = { joinedAt = time() }
-  return true
+  local p = s.participants[account]
+  local isNew = p == nil
+  if isNew then
+    p = { joinedAt = time(), alts = {} }
+    s.participants[account] = p
+  end
+  if charName then
+    p.alts[Session.NormalizeName(charName)] = true
+    NoteIdentity(charName, account)
+  end
+  return isNew
 end
 
-local function RemoveParticipant(name)
+local function RemoveParticipant(account)
   local s = Session.Active()
   if not s then
     return
   end
-  s.participants[name] = nil
+  s.participants[account] = nil
 end
 
 function Session.BuildSnapshot()
@@ -253,7 +295,7 @@ end
 
 function Session.ApplySnapshot(sid, sender, data)
   local s = Session.Active()
-  if not s or s.id ~= sid or sender ~= s.organizer then
+  if not s or s.id ~= sid or Session.AccountOf(sender) ~= s.organizer then
     return
   end
   local snap = Storage.Deserialize(data)
@@ -264,6 +306,13 @@ function Session.ApplySnapshot(sid, sender, data)
   s.participants = snap.participants
   s.challenges = type(snap.challenges) == "table" and snap.challenges or {}
   s.results = type(snap.results) == "table" and snap.results or {}
+  for account, p in pairs(s.participants) do
+    if type(p.alts) == "table" then
+      for char in pairs(p.alts) do
+        NoteIdentity(char, account)
+      end
+    end
+  end
   for _, r in ipairs(s.results) do
     if r.eid then
       s.seenEvents[r.eid] = true
@@ -277,13 +326,13 @@ end
 -- Recepción de mensajes (llamado desde Communication)
 -- ---------------------------------------------------------------------------
 
-local function OnChal(sid, f, sender)
+local function OnChal(sid, f, sender, senderAccount)
   local s = Session.Active()
   if s and s.id == sid then
-    if sender ~= s.organizer then
+    if senderAccount ~= s.organizer then
       return
     end
-    local cid, title, desc, points = f[1], f[2], f[3], tonumber(f[4])
+    local cid, title, desc, points = f[2], f[3], f[4], tonumber(f[5])
     if not cid or not title or not points then
       return
     end
@@ -304,6 +353,8 @@ local function OnChal(sid, f, sender)
   end
 end
 
+-- Todas las operaciones llevan la cuenta del emisor como primer campo (f[1]),
+-- así cada mensaje refuerza el mapa personaje -> cuenta.
 function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
   if pv ~= Protocol.VERSION then
     if not warnedPeers[sender] then
@@ -315,55 +366,61 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
 
   local s = Session.Active()
 
+  -- SNAP tiene su propio formato (seq, total, cuenta, datos)
+  if op == "SNAP" then
+    NoteIdentity(sender, f[3])
+    LaTaberna.Comm.OnSnapChunk(sid, eid, f, sender)
+    return
+  end
+
+  NoteIdentity(sender, f[1])
+  local senderAccount = Session.AccountOf(sender)
+
   if op == "HELLO" then
-    -- Anuncio de presencia y versión; la comprobación de pv ya se hizo arriba.
+    -- Anuncio de presencia, versión y cuenta; nada más que hacer.
     return
   elseif op == "DISC" then
     if s and Session.IsOrganizer() then
       LaTaberna.Comm.SendChallengesTo(sender)
     end
   elseif op == "CHAL" then
-    OnChal(sid, f, sender)
+    OnChal(sid, f, sender, senderAccount)
   elseif op == "JOIN" then
     if s and s.id == sid and Session.IsOrganizer() then
-      if AddParticipant(sender) then
-        LaTaberna.Comm.BroadcastParticipantAdd(sender)
+      if AddParticipant(senderAccount, sender) then
+        LaTaberna.Comm.BroadcastParticipantAdd(senderAccount, sender)
         LaTaberna.Comm.SendSnapshotTo(sender)
-        Print(sender .. " se ha unido a la liga.")
+        Print(senderAccount .. " se ha unido a la liga.")
         Refresh()
       end
     end
   elseif op == "LEAVE" then
     if s and s.id == sid and Session.IsOrganizer() then
-      RemoveParticipant(sender)
-      LaTaberna.Comm.BroadcastParticipantRemove(sender)
-      Print(sender .. " ha salido de la liga.")
+      RemoveParticipant(senderAccount)
+      LaTaberna.Comm.BroadcastParticipantRemove(senderAccount)
+      Print(senderAccount .. " ha salido de la liga.")
       Refresh()
     end
   elseif op == "PART" then
-    if s and s.id == sid and sender == s.organizer then
-      local action = f[1]
-      local name = Session.NormalizeName(f[2])
+    if s and s.id == sid and senderAccount == s.organizer then
+      local action, targetAccount, targetChar = f[2], f[3], f[4]
       if action == "add" then
-        AddParticipant(name)
+        AddParticipant(targetAccount, targetChar)
       elseif action == "remove" then
-        RemoveParticipant(name)
+        RemoveParticipant(targetAccount)
       end
       Refresh()
     end
   elseif op == "RES" then
-    if s and s.id == sid and sender == s.organizer then
-      Session.ApplyResult(sid, eid, f[1], Session.NormalizeName(f[2]),
-        tonumber(f[3]) or 0, tonumber(f[4]))
+    if s and s.id == sid and senderAccount == s.organizer then
+      Session.ApplyResult(sid, eid, f[2], f[3], tonumber(f[4]) or 0, tonumber(f[5]))
     end
   elseif op == "SREQ" then
     if s and s.id == sid and Session.IsOrganizer() then
       LaTaberna.Comm.SendSnapshotTo(sender)
     end
-  elseif op == "SNAP" then
-    LaTaberna.Comm.OnSnapChunk(sid, eid, f, sender)
   elseif op == "CLOSE" then
-    if s and s.id == sid and sender == s.organizer then
+    if s and s.id == sid and senderAccount == s.organizer then
       ArchiveSession(s)
       Storage.SetSession(nil)
       Print("El organizador ha cerrado la sesión.")
@@ -387,10 +444,24 @@ function Session.IsOrganizerOnline()
   if not IsInGuild() then
     return false
   end
+  -- El organizador puede estar conectado con cualquiera de sus personajes.
+  local candidates = {}
+  local p = s.participants[s.organizer]
+  if p and type(p.alts) == "table" then
+    for char in pairs(p.alts) do
+      candidates[char] = true
+    end
+  end
+  for char, account in pairs(charToAccount) do
+    if account == s.organizer then
+      candidates[char] = true
+    end
+  end
+  candidates[s.organizer] = true -- fallback: la "cuenta" es un personaje
   for i = 1, GetNumGuildMembers() do
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
-    if name and Session.NormalizeName(name) == s.organizer then
-      return online and true or false
+    if name and online and candidates[Session.NormalizeName(name)] then
+      return true
     end
   end
   return false

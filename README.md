@@ -14,14 +14,17 @@ sesiones compartidas.
    **organizador**: la autoridad de la liga.
 2. El addon anuncia la sesión por el **canal de hermandad** (mensajes de addon,
    invisibles en el chat). El resto recibe una invitación y se une con un clic.
-3. La sesión tiene **3 retos activos** (título, descripción y puntos), que el
+3. La liga es **por cuenta, no por personaje**: cada participante se identifica
+   por su BattleTag, así que da igual con qué personaje entre — sus puntos son
+   siempre los mismos.
+4. La sesión tiene **3 retos activos** (título, descripción y puntos), que el
    organizador puede editar en cualquier momento.
-4. Cuando alguien cumple un reto, **el organizador lo confirma** desde la
+5. Cuando alguien cumple un reto, **el organizador lo confirma** desde la
    ventana del addon y los puntos se reparten al instante a todos los clientes.
-5. La **clasificación** se actualiza en todos los addons a la vez. Cada
+6. La **clasificación** se actualiza en todos los addons a la vez. Cada
    resultado lleva un identificador único, así que no se puede puntuar dos
    veces lo mismo.
-6. El estado se **guarda entre sesiones** y se sincroniza al reconectar: si
+7. El estado se **guarda entre sesiones** y se sincroniza al reconectar: si
    entras tarde, tu addon pide el estado completo al organizador.
 
 Si el organizador se desconecta, las confirmaciones quedan **en pausa** hasta
