@@ -153,7 +153,7 @@ function Comm.Init()
   C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
   local frame = CreateFrame("Frame")
-  frame:RegisterEvent("CHAT_ADDON_MESSAGE")
+  frame:RegisterEvent("CHAT_MSG_ADDON")
   frame:SetScript("OnEvent", function(_, _, prefix, text, channel, sender)
     if prefix ~= PREFIX then
       return
