@@ -187,6 +187,9 @@ local myGuid = nil
 
 function Stats.ToggleDebug()
   debug = not debug
+  if LaTabernaDB and LaTabernaDB.settings then
+    LaTabernaDB.settings.statsDebug = debug
+  end
   Session.Print("Diagnóstico de contadores: " .. (debug and "ACTIVADO" or "desactivado"))
   Session.Print("Sesión activa: " .. tostring(Session.Active() ~= nil)
     .. " · GUID propio: " .. tostring(myGuid ~= nil))
@@ -201,6 +204,9 @@ end
 
 function Stats.Init()
   myGuid = UnitGUID("player")
+  if LaTabernaDB and LaTabernaDB.settings then
+    debug = LaTabernaDB.settings.statsDebug == true
+  end
   BuildDuelPatterns()
   BuildXPPatterns()
   local frame = CreateFrame("Frame")
