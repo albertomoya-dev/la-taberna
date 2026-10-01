@@ -130,6 +130,48 @@ local function OnSystemMessage(msg)
 end
 
 -- ---------------------------------------------------------------------------
+-- Conteo de muertes por mensajes de XP: "X muere, ganas N puntos de experiencia."
+-- Es la fuente alternativa si el registro de combate está capado (valores
+-- secretos). Solo cuenta muertes que dan XP: las criaturas triviales (grises)
+-- no cuentan.
+-- ---------------------------------------------------------------------------
+
+local xpPatterns = {}
+
+local function MakeXPPattern(globalString)
+  local p = globalString:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+  p = p:gsub("%%[0-9]%$s", "(.-)")
+  p = p:gsub("%%s", "(.-)")
+  p = p:gsub("%%[0-9]%$d", "%%d+")
+  p = p:gsub("%%d", "%%d+")
+  -- Sin anclar al final: puede llevar sufijos (bonus de descanso, etc.)
+  return "^" .. p
+end
+
+local function BuildXPPatterns()
+  xpPatterns = {}
+  for _, gs in ipairs({ COMBATLOG_XPGAIN_FIRSTPERSON }) do
+    if type(gs) == "string" then
+      xpPatterns[#xpPatterns + 1] = MakeXPPattern(gs)
+    end
+  end
+end
+
+local function OnXPGain(msg)
+  if not Session.Active() then
+    return
+  end
+  for _, pattern in ipairs(xpPatterns) do
+    local creature = msg:match(pattern)
+    if creature then
+      DebugPrint("XP por muerte:", creature)
+      Stats.AddLocal("kills", 1)
+      return
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
 -- Detección de muertes: registro de combate.
 -- Ojo: Forever puede marcar campos como valores secretos; todo el acceso va
 -- envuelto en pcall y, si falla, el contador simplemente no sube.
@@ -142,6 +184,11 @@ function Stats.ToggleDebug()
   Session.Print("Diagnóstico de contadores: " .. (debug and "ACTIVADO" or "desactivado"))
   Session.Print("Sesión activa: " .. tostring(Session.Active() ~= nil)
     .. " · GUID propio: " .. tostring(myGuid ~= nil))
+  if C_EventUtils and C_EventUtils.IsEventValid then
+    Session.Print("Evento COMBAT_LOG_EVENT_UNFILTERED válido: "
+      .. tostring(C_EventUtils.IsEventValid("COMBAT_LOG_EVENT_UNFILTERED")))
+  end
+  Session.Print("Patrones de duelo: " .. #duelPatterns .. " · patrones de XP: " .. #xpPatterns)
   return debug
 end
 
@@ -186,14 +233,18 @@ end
 function Stats.Init()
   myGuid = UnitGUID("player")
   BuildDuelPatterns()
+  BuildXPPatterns()
   local frame = CreateFrame("Frame")
   frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
   frame:RegisterEvent("CHAT_MSG_SYSTEM")
+  frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
   frame:SetScript("OnEvent", function(_, event, arg1)
     if event == "COMBAT_LOG_EVENT_UNFILTERED" then
       OnCombatLog()
     elseif event == "CHAT_MSG_SYSTEM" then
       OnSystemMessage(arg1)
+    elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
+      OnXPGain(arg1)
     end
   end)
 end
