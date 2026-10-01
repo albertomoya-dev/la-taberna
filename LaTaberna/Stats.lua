@@ -161,6 +161,7 @@ local function OnXPGain(msg)
   if not Session.Active() then
     return
   end
+  DebugPrint("mensaje XP crudo: " .. tostring(msg))
   for _, pattern in ipairs(xpPatterns) do
     local creature = msg:match(pattern)
     if creature then
@@ -169,6 +170,7 @@ local function OnXPGain(msg)
       return
     end
   end
+  DebugPrint("el mensaje de XP no encaja con el patrón")
 end
 
 -- ---------------------------------------------------------------------------
