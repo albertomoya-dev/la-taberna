@@ -142,8 +142,8 @@ local function MakeXPPattern(globalString)
   local p = globalString:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
   p = p:gsub("%%[0-9]%$s", "(.-)")
   p = p:gsub("%%s", "(.-)")
-  p = p:gsub("%%[0-9]%$d", "%%d+")
-  p = p:gsub("%%d", "%%d+")
+  p = p:gsub("%%[0-9]%$d", "%d+")
+  p = p:gsub("%%d", "%d+")
   -- Sin anclar al final: puede llevar sufijos (bonus de descanso, etc.)
   return "^" .. p
 end
