@@ -246,6 +246,15 @@ function Stats.Init()
   for _, ev in ipairs({ "DUEL_REQUESTED", "DUEL_FINISHED" }) do
     pcall(frame.RegisterEvent, frame, ev)
   end
+  -- Sonda amplia: canales y eventos candidatos por donde podría llegar el
+  -- resultado de un duelo en Forever. Con diagnóstico activo se captura todo.
+  for _, ev in ipairs({
+    "DUEL_INBOUNDS", "DUEL_OUTOFBOUNDS",
+    "CHAT_MSG_BG_SYSTEM_NEUTRAL", "CHAT_MSG_BG_SYSTEM_ALLIANCE",
+    "CHAT_MSG_BG_SYSTEM_HORDE", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE",
+  }) do
+    pcall(frame.RegisterEvent, frame, ev)
+  end
   frame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "CHAT_MSG_SYSTEM" then
       OnSystemMessage(arg1)
@@ -258,6 +267,13 @@ function Stats.Init()
         event = event,
         arg1 = string.format("%q", tostring(arg1)),
         arg2 = string.format("%q", tostring(arg2)),
+      })
+    else
+      -- Sonda: registrar cualquier actividad de los canales candidatos
+      LogCapture({
+        kind = "probe",
+        event = event,
+        msg = string.format("%q", tostring(arg1)),
       })
     end
   end)
