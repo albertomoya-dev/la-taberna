@@ -596,7 +596,7 @@ local function CreateTextDialog()
   eb:SetMultiLine(true)
   eb:SetAutoFocus(false)
   eb:SetFontObject(GameFontHighlightSmall)
-  eb:SetWidth(390)
+  eb:SetSize(390, 200)
   eb:SetScript("OnEscapePressed", function()
     f:Hide()
   end)
@@ -630,6 +630,8 @@ local function ShowTextDialog(opts)
   if opts.highlight then
     textDialog.editBox:HighlightText()
     textDialog.editBox:SetFocus()
+  elseif opts.focus then
+    textDialog.editBox:SetFocus()
   end
   textDialog:Show()
 end
@@ -651,6 +653,7 @@ function UI.ShowImport()
   ShowTextDialog({
     title = "Pega aquí un respaldo y pulsa Importar",
     actionLabel = "Importar",
+    focus = true,
     onAction = function(text)
       local ok, err = LaTaberna.Storage.ImportSession(text)
       if ok then
@@ -686,6 +689,7 @@ function UI.ShowJoin()
   ShowTextDialog({
     title = "Pega el código de invitación y pulsa Unirse",
     actionLabel = "Unirse",
+    focus = true,
     onAction = function(text)
       Session.JoinByCode(text)
       if Session.Active() then
@@ -700,6 +704,7 @@ function UI.ShowAlias()
     title = "Escribe tu alias (vacío para volver al BattleTag)",
     text = (LaTabernaDB.settings and LaTabernaDB.settings.alias) or "",
     actionLabel = "Guardar",
+    focus = true,
     onAction = function(text)
       Session.SetAlias(text)
       textDialog:Hide()
