@@ -8,11 +8,18 @@ local Session = LaTaberna.Session
 local Stats = {}
 LaTaberna.Stats = Stats
 
-Stats.KINDS = { "kills", "duels", "rares" }
+Stats.KINDS = { "kills", "duels", "rares", "gold" }
 Stats.LABELS = {
   kills = "Enemigos derrotados",
   duels = "Duelos ganados",
   rares = "Rares derrotados",
+  gold = "Oro ganado",
+}
+Stats.SHORT_LABELS = {
+  kills = "Enemigos",
+  duels = "Duelos",
+  rares = "Rares",
+  gold = "Oro",
 }
 
 local debug = false
@@ -222,6 +229,24 @@ local function OnXPGain(msg)
 end
 
 -- ---------------------------------------------------------------------------
+-- Oro ganado: PLAYER_MONEY se dispara cuando cambia el dinero; solo sumamos
+-- los incrementos (gastar no resta en la liga). Valores en cobre.
+-- ---------------------------------------------------------------------------
+
+local lastMoney = nil
+
+local function OnMoney()
+  if not Session.Active() then
+    return
+  end
+  local money = GetMoney()
+  if lastMoney and money > lastMoney then
+    Stats.AddLocal("gold", money - lastMoney)
+  end
+  lastMoney = money
+end
+
+-- ---------------------------------------------------------------------------
 -- Nota sobre el registro de combate: Forever BLOQUEA que los addons se
 -- suscriban a COMBAT_LOG_EVENT_UNFILTERED (acción protegida, genera el aviso
 -- de "addon bloqueado"). Por eso los contadores no usan el combat log:
@@ -260,6 +285,8 @@ function Stats.Init()
   local frame = CreateFrame("Frame")
   frame:RegisterEvent("CHAT_MSG_SYSTEM")
   frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
+  frame:RegisterEvent("PLAYER_MONEY")
+  lastMoney = GetMoney()
   -- Eventos nativos de duelo, por si Forever no usa el mensaje de sistema.
   -- Se registran con pcall por si no existen en este cliente.
   for _, ev in ipairs({ "DUEL_REQUESTED", "DUEL_FINISHED" }) do
@@ -279,6 +306,8 @@ function Stats.Init()
       OnSystemMessage(arg1)
     elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
       OnXPGain(arg1)
+    elseif event == "PLAYER_MONEY" then
+      OnMoney()
     elseif event == "DUEL_REQUESTED" or event == "DUEL_FINISHED" then
       DebugPrint(event, arg1, arg2)
       LogCapture({

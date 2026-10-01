@@ -171,8 +171,8 @@ local function CreateLeagueTab(parent)
   f:SetAllPoints()
 
   for i, kind in ipairs(Stats.KINDS) do
-    local b = MakeButton(f, Stats.LABELS[kind], 150, 20)
-    b:SetPoint("TOPLEFT", 8 + (i - 1) * 158, -6)
+    local b = MakeButton(f, Stats.SHORT_LABELS[kind], 112, 20)
+    b:SetPoint("TOPLEFT", 8 + (i - 1) * 116, -6)
     leagueSubButtons[i] = b
     b:SetScript("OnClick", function()
       SelectLeagueKind(i)
@@ -198,6 +198,22 @@ local function CreateLeagueTab(parent)
   return f
 end
 
+-- Formatea el valor de un ranking; el oro se guarda en cobre.
+local function FormatStatValue(kind, value)
+  if kind == "gold" then
+    local gold = math.floor(value / 10000)
+    local silver = math.floor((value % 10000) / 100)
+    local copper = value % 100
+    if gold > 0 then
+      return string.format("%do %dp %dc", gold, silver, copper)
+    elseif silver > 0 then
+      return string.format("%dp %dc", silver, copper)
+    end
+    return string.format("%dc", copper)
+  end
+  return tostring(value)
+end
+
 RefreshLeague = function()
   if not leagueHeader then
     return
@@ -220,7 +236,7 @@ RefreshLeague = function()
     if entry then
       row.rank:SetText(i .. ".")
       row.name:SetText(entry.name)
-      row.value:SetText(tostring(entry.value))
+      row.value:SetText(FormatStatValue(leagueKind, entry.value))
     else
       row.rank:SetText("")
       row.name:SetText("")

@@ -300,7 +300,7 @@ function Session.ReportStat(account, kind, value)
   if not s then
     return
   end
-  if kind ~= "kills" and kind ~= "duels" and kind ~= "rares" then
+  if kind ~= "kills" and kind ~= "duels" and kind ~= "rares" and kind ~= "gold" then
     return
   end
   if not s.participants[account] then
