@@ -161,8 +161,9 @@ local function OnXPGain(msg)
   if not Session.Active() then
     return
   end
-  DebugPrint("mensaje XP crudo: " .. tostring(msg))
-  for _, pattern in ipairs(xpPatterns) do
+  DebugPrint("mensaje XP crudo: " .. string.format("%q", tostring(msg)))
+  for i, pattern in ipairs(xpPatterns) do
+    DebugPrint("patrón " .. i .. ": " .. pattern)
     local creature = msg:match(pattern)
     if creature then
       DebugPrint("XP por muerte:", creature)
