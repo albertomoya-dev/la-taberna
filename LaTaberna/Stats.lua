@@ -23,6 +23,23 @@ local function DebugPrint(...)
   end
 end
 
+-- Guarda capturas de diagnóstico en los SavedVariables (máx. 30) para poder
+-- revisarlas después en el archivo WTF del juego con /reload.
+local function LogCapture(entry)
+  if not debug or not LaTabernaDB then
+    return
+  end
+  if type(LaTabernaDB.debugLog) ~= "table" then
+    LaTabernaDB.debugLog = {}
+  end
+  local log = LaTabernaDB.debugLog
+  entry.ts = time()
+  log[#log + 1] = entry
+  while #log > 30 do
+    table.remove(log, 1)
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- Acceso al estado
 -- ---------------------------------------------------------------------------
@@ -163,8 +180,13 @@ local function OnXPGain(msg)
   end
   DebugPrint("mensaje XP crudo: " .. string.format("%q", tostring(msg)))
   for i, pattern in ipairs(xpPatterns) do
-    DebugPrint("patrón " .. i .. ": " .. pattern)
     local creature = msg:match(pattern)
+    LogCapture({
+      kind = "xp",
+      msg = string.format("%q", tostring(msg)),
+      pattern = pattern,
+      matched = creature or false,
+    })
     if creature then
       DebugPrint("XP por muerte:", creature)
       Stats.AddLocal("kills", 1)
