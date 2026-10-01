@@ -8,7 +8,7 @@ local Stats = LaTaberna.Stats
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.3.0"
+local ADDON_VERSION = "0.3.1"
 local MAX_ROWS = 21       -- filas visibles de la clasificación
 local LEAGUE_ROWS = 18    -- filas visibles por ranking de la liga
 local PICKER_ROWS = 20    -- participantes seleccionables a la vez
@@ -138,7 +138,7 @@ local function RefreshLeaderboard()
     local entry = board[i]
     if entry then
       row.rank:SetText(i .. ".")
-      row.name:SetText(entry.name)
+      row.name:SetText(Session.DisplayName(entry.name))
       row.points:SetText(entry.points .. " pt")
     else
       row.rank:SetText("")
@@ -235,7 +235,7 @@ RefreshLeague = function()
     local entry = board[i]
     if entry then
       row.rank:SetText(i .. ".")
-      row.name:SetText(entry.name)
+      row.name:SetText(Session.DisplayName(entry.name))
       row.value:SetText(FormatStatValue(leagueKind, entry.value))
     else
       row.rank:SetText("")
@@ -363,6 +363,12 @@ local function CreateSessionTab(parent)
     UI.ShowImport()
   end)
 
+  sessionButtons.alias = MakeButton(f, "Alias…", 80, 24)
+  sessionButtons.alias:SetPoint("LEFT", sessionButtons.import, "RIGHT", 8, 0)
+  sessionButtons.alias:SetScript("OnClick", function()
+    UI.ShowAlias()
+  end)
+
   -- Fila 4: borrado (doble confirmación)
   sessionButtons.reset = MakeDangerButton(f, "Reiniciar liga", 190)
   sessionButtons.reset:SetPoint("TOPLEFT", sessionButtons.export, "BOTTOMLEFT", 0, -14)
@@ -392,7 +398,7 @@ local function RefreshSessionTab()
       count = count + 1
     end
     sessionLines[1]:SetText("Sesión activa")
-    sessionLines[2]:SetText("Organizador: " .. (s.organizer or "?"))
+    sessionLines[2]:SetText("Organizador: " .. Session.DisplayName(s.organizer or "?"))
     sessionLines[3]:SetText("Tu rol: " .. (Session.IsOrganizer() and "organizador" or "participante")
       .. " · tu cuenta: " .. Session.PlayerAccount())
     sessionLines[4]:SetText("Participantes: " .. count)
@@ -460,17 +466,19 @@ function UI.ShowParticipantPicker(challengeId)
   end
   local challenge = Rules.GetChallenge(s, challengeId)
   picker.title:SetText("¿Quién completó «" .. (challenge and challenge.title or "?") .. "»?")
-  local names = {}
-  for name in pairs(s.participants) do
-    names[#names + 1] = name
+  local entries = {}
+  for account in pairs(s.participants) do
+    entries[#entries + 1] = { account = account, display = Session.DisplayName(account) }
   end
-  table.sort(names)
+  table.sort(entries, function(a, b)
+    return a.display < b.display
+  end)
   for i, b in ipairs(picker.rows) do
-    local name = names[i]
-    if name then
-      b:SetText(name)
+    local entry = entries[i]
+    if entry then
+      b:SetText(entry.display)
       b:SetScript("OnClick", function()
-        Session.ConfirmResult(challengeId, name)
+        Session.ConfirmResult(challengeId, entry.account)
         picker:Hide()
       end)
       b:Show()
@@ -683,6 +691,18 @@ function UI.ShowJoin()
       if Session.Active() then
         textDialog:Hide()
       end
+    end,
+  })
+end
+
+function UI.ShowAlias()
+  ShowTextDialog({
+    title = "Escribe tu alias (vacío para volver al BattleTag)",
+    text = (LaTabernaDB.settings and LaTabernaDB.settings.alias) or "",
+    actionLabel = "Guardar",
+    onAction = function(text)
+      Session.SetAlias(text)
+      textDialog:Hide()
     end,
   })
 end

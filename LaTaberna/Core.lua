@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.3.0"
+Core.VERSION = "0.3.1"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -80,6 +80,7 @@ local function PrintHelp()
   print("  /taberna crear — crea una sesión (serás el organizador)")
   print("  /taberna salir — sale de la sesión (el organizador la cierra para todos)")
   print("  /taberna unirse <código> — te unes a una liga con su código de invitación")
+  print("  /taberna alias <nombre> — te pones un alias (vacío para quitarlo)")
   print("  /taberna export — muestra un respaldo copiable de la sesión")
   print("  /taberna import — importa un respaldo")
   print("  /taberna stat <id> — diagnóstico: muestra GetStatistic(id)")
@@ -100,6 +101,8 @@ SlashCmdList["LATABERNA"] = function(msg)
     Session.Leave()
   elseif cmd == "unirse" then
     Session.JoinByCode(msg:match("^%S+%s+(.+)$"))
+  elseif cmd == "alias" then
+    Session.SetAlias(msg:match("^%S+%s+(.+)$"))
   elseif cmd == "export" then
     LaTaberna.UI.ShowExport()
   elseif cmd == "import" then

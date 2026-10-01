@@ -90,6 +90,57 @@ function Session.IsOrganizer()
   return s ~= nil and s.organizer == Session.PlayerAccount()
 end
 
+-- Nombre para mostrar de una cuenta: su alias si lo tiene, si no el BattleTag.
+function Session.DisplayName(account)
+  local s = Session.Active()
+  if not s then
+    return account
+  end
+  local p = s.participants[account]
+  if p and type(p.alias) == "string" and p.alias ~= "" then
+    return p.alias
+  end
+  return account
+end
+
+-- Alias propio: se guarda en ajustes (persiste entre sesiones) y se aplica a
+-- la sesión activa, difundiéndose al resto. Vacío = volver al BattleTag.
+function Session.SetAlias(alias)
+  alias = strtrim(alias or "")
+  if #alias > 24 then
+    Print("El alias no puede tener más de 24 caracteres.")
+    return
+  end
+  LaTabernaDB.settings.alias = alias ~= "" and alias or nil
+  local s = Session.Active()
+  if not s then
+    Print("Alias guardado; se aplicará cuando estés en una sesión.")
+    return
+  end
+  local me = Session.PlayerAccount()
+  if s.participants[me] then
+    s.participants[me].alias = alias ~= "" and alias or nil
+  end
+  LaTaberna.Comm.SendGuild("ALIAS", s.id, nil, me, alias)
+  Print(alias ~= "" and ("Tu alias ahora es «" .. alias .. "».")
+    or "Alias eliminado; se mostrará tu BattleTag.")
+  Refresh()
+end
+
+-- Aplica el alias guardado al entrar en una sesión y lo anuncia.
+local function ApplySavedAlias()
+  local s = Session.Active()
+  local alias = LaTabernaDB and LaTabernaDB.settings and LaTabernaDB.settings.alias
+  if not s or not alias then
+    return
+  end
+  local me = Session.PlayerAccount()
+  if s.participants[me] then
+    s.participants[me].alias = alias
+    LaTaberna.Comm.SendGuild("ALIAS", s.id, nil, me, alias)
+  end
+end
+
 local function ArchiveSession(s)
   local count = 0
   for _ in pairs(s.participants or {}) do
@@ -136,6 +187,7 @@ function Session.Create()
   local Comm = LaTaberna.Comm
   Comm.BroadcastChallenges()
   Comm.BroadcastParticipantAdd(me, myChar)
+  ApplySavedAlias()
   Refresh()
 end
 
@@ -153,6 +205,7 @@ function Session.AcceptJoin(sid)
   Comm.SendGuild("JOIN", sid, nil, Session.PlayerAccount())
   Comm.SendGuild("SREQ", sid, nil, Session.PlayerAccount())
   Print("Te has unido a la liga de " .. organizer .. ".")
+  ApplySavedAlias()
   Refresh()
 end
 
@@ -262,7 +315,7 @@ function Session.ApplyResult(sid, eid, challengeId, participant, points, ts)
     ts = ts,
   }
   local challenge = Rules.GetChallenge(s, challengeId)
-  Print(participant .. " ha completado «" .. (challenge and challenge.title or challengeId)
+  Print(Session.DisplayName(participant) .. " ha completado «" .. (challenge and challenge.title or challengeId)
     .. "» (+" .. tostring(points) .. " pt).")
   Refresh()
 end
@@ -484,6 +537,12 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
   elseif op == "STAT" then
     if s and s.id == sid then
       Session.ReportStat(senderAccount, f[2], tonumber(f[3]) or 0)
+    end
+  elseif op == "ALIAS" then
+    if s and s.id == sid and s.participants[senderAccount] then
+      local alias = strtrim(f[2] or "")
+      s.participants[senderAccount].alias = alias ~= "" and alias or nil
+      Refresh()
     end
   elseif op == "RESET" then
     if s and s.id == sid and senderAccount == s.organizer then
