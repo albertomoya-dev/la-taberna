@@ -111,16 +111,15 @@ pruebas en el cliente) está en [`LaTaberna/README.md`](LaTaberna/README.md).
 
 ## Limitaciones conocidas
 
-- **Nada de métricas de combate automáticas** (daño, curación, quién la lió):
-  Forever usa "valores secretos" que los addons no pueden procesar. La
-  validación la hace el organizador.
-- Los contadores de la liga (enemigos, duelos, rares) sí usan el registro de
-  combate y los mensajes de duelo, con protección ante valores secretos: si la
-  beta capa alguno de esos campos, el contador afectado simplemente no sube y
-  habrá que buscar otra fuente (los comandos `/taberna stat <id>` y
-  `/taberna scanstats <a> <b>` ayudan a diagnosticar).
-- El contador de rares se dispara cuando un rare muere en tu zona de combate;
-  puede contar alguno que no hayas tocado. Es una liga entre amigos.
+- **Nada de métricas de combate automáticas**: Forever **bloquea** que los
+  addons se suscriban al registro de combate (es acción protegida). Por eso:
+  - Enemigos: se cuentan por los **mensajes de XP** ("X muere, obtienes N
+    experiencia"). Solo suman muertes que dan XP: las criaturas grises no.
+  - Duelos: se detectan por los **mensajes de sistema** de fin de duelo.
+  - Rares: **sin fuente automática por ahora**; el ranking existe pero no sube
+    hasta encontrar una vía permitida o pasarlo a confirmación del líder.
+- Los comandos `/taberna stat <id>` y `/taberna scanstats <a> <b>` ayudan a
+  buscar fuentes alternativas en el panel de estadísticas del juego.
 - La clasificación muestra 21 filas y el selector de participantes 20; para
   grupos mayores habrá que añadir scroll.
 - Es un diseño para un **grupo de confianza**, no un sistema antitrampas.

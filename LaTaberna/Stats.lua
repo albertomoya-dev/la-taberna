@@ -174,9 +174,13 @@ local function OnXPGain(msg)
 end
 
 -- ---------------------------------------------------------------------------
--- Detección de muertes: registro de combate.
--- Ojo: Forever puede marcar campos como valores secretos; todo el acceso va
--- envuelto en pcall y, si falla, el contador simplemente no sube.
+-- Nota sobre el registro de combate: Forever BLOQUEA que los addons se
+-- suscriban a COMBAT_LOG_EVENT_UNFILTERED (acción protegida, genera el aviso
+-- de "addon bloqueado"). Por eso los contadores no usan el combat log:
+--   - enemigos: mensajes de XP (arriba)
+--   - duelos: mensajes de sistema (arriba)
+--   - rares: sin fuente automática por ahora; el contador existe pero no sube
+--     hasta encontrar una vía permitida (o pasa a confirmarlo el líder).
 -- ---------------------------------------------------------------------------
 
 local myGuid = nil
@@ -186,47 +190,9 @@ function Stats.ToggleDebug()
   Session.Print("Diagnóstico de contadores: " .. (debug and "ACTIVADO" or "desactivado"))
   Session.Print("Sesión activa: " .. tostring(Session.Active() ~= nil)
     .. " · GUID propio: " .. tostring(myGuid ~= nil))
-  if C_EventUtils and C_EventUtils.IsEventValid then
-    Session.Print("Evento COMBAT_LOG_EVENT_UNFILTERED válido: "
-      .. tostring(C_EventUtils.IsEventValid("COMBAT_LOG_EVENT_UNFILTERED")))
-  end
   Session.Print("Patrones de duelo: " .. #duelPatterns .. " · patrones de XP: " .. #xpPatterns)
   Session.Print("GL XP: " .. tostring(COMBATLOG_XPGAIN_FIRSTPERSON))
   return debug
-end
-
-local function OnCombatLog()
-  if not Session.Active() or not myGuid then
-    DebugPrint("sin sesión o sin GUID; evento ignorado")
-    return
-  end
-  local ok, _, subevent, _, sourceGUID, _, _, _, _, _, destFlags =
-    pcall(CombatLogGetCurrentEventInfo)
-  if not ok then
-    DebugPrint("error leyendo el evento de combate (valores secretos?)")
-    return
-  end
-  DebugPrint("subevento:", subevent)
-  if subevent == "PARTY_KILL" then
-    -- Muerte con el golpe de gracia de alguien del grupo; solo cuentan las mías.
-    local okMine, isMine = pcall(function()
-      return sourceGUID == myGuid
-    end)
-    DebugPrint("PARTY_KILL · comparación GUID ok:", okMine, "· es mío:", isMine)
-    if okMine and isMine then
-      Stats.AddLocal("kills", 1)
-    end
-  elseif subevent == "UNIT_DIED" then
-    local okRare, isRare = pcall(function()
-      local classification = bit.band(destFlags, COMBATLOG_OBJECT_CLASSIFICATION_MASK)
-      return classification == COMBATLOG_OBJECT_CLASSIFICATION_RARE
-        or classification == COMBATLOG_OBJECT_CLASSIFICATION_RAREELITE
-    end)
-    DebugPrint("UNIT_DIED · flags ok:", okRare, "· es rare:", isRare)
-    if okRare and isRare then
-      Stats.AddLocal("rares", 1)
-    end
-  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -238,13 +204,10 @@ function Stats.Init()
   BuildDuelPatterns()
   BuildXPPatterns()
   local frame = CreateFrame("Frame")
-  frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
   frame:RegisterEvent("CHAT_MSG_SYSTEM")
   frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
   frame:SetScript("OnEvent", function(_, event, arg1)
-    if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-      OnCombatLog()
-    elseif event == "CHAT_MSG_SYSTEM" then
+    if event == "CHAT_MSG_SYSTEM" then
       OnSystemMessage(arg1)
     elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
       OnXPGain(arg1)
