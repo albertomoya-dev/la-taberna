@@ -152,6 +152,8 @@ end
 -- Pestaña 2: Liga (rankings de enemigos, duelos y rares)
 -- ---------------------------------------------------------------------------
 
+local RefreshLeague
+
 local function SelectLeagueKind(index)
   leagueKind = Stats.KINDS[index]
   for i, b in ipairs(leagueSubButtons) do
@@ -196,7 +198,7 @@ local function CreateLeagueTab(parent)
   return f
 end
 
-function RefreshLeague()
+RefreshLeague = function()
   if not leagueHeader then
     return
   end
