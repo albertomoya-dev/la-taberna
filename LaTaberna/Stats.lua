@@ -25,8 +25,9 @@ end
 
 -- Guarda capturas de diagnóstico en los SavedVariables (máx. 30) para poder
 -- revisarlas después en el archivo WTF del juego con /reload.
+-- Siempre activo: no depende del modo depura (evita trampas con el toggle).
 local function LogCapture(entry)
-  if not debug or not LaTabernaDB then
+  if not LaTabernaDB then
     return
   end
   if type(LaTabernaDB.debugLog) ~= "table" then
@@ -187,12 +188,16 @@ local function OnXPGain(msg)
   DebugPrint("mensaje XP crudo: " .. string.format("%q", tostring(msg)))
   for i, pattern in ipairs(xpPatterns) do
     local creature = msg:match(pattern)
-    LogCapture({
-      kind = "xp",
-      msg = string.format("%q", tostring(msg)),
-      pattern = pattern,
-      matched = creature or false,
-    })
+    if debug then
+      -- Las muertes con XP son frecuentes: solo se capturan con depura activo
+      -- para no rotar el registro y perder las capturas de duelos.
+      LogCapture({
+        kind = "xp",
+        msg = string.format("%q", tostring(msg)),
+        pattern = pattern,
+        matched = creature or false,
+      })
+    end
     if creature then
       DebugPrint("XP por muerte:", creature)
       Stats.AddLocal("kills", 1)
@@ -269,12 +274,15 @@ function Stats.Init()
         arg2 = string.format("%q", tostring(arg2)),
       })
     else
-      -- Sonda: registrar cualquier actividad de los canales candidatos
-      LogCapture({
-        kind = "probe",
-        event = event,
-        msg = string.format("%q", tostring(arg1)),
-      })
+      -- Sonda: solo capturas relacionadas con duelos, para no rotar el log
+      local text = tostring(arg1):lower()
+      if event:find("DUEL") or text:find("duelo", 1, true) then
+        LogCapture({
+          kind = "probe",
+          event = event,
+          msg = string.format("%q", tostring(arg1)),
+        })
+      end
     end
   end)
 end
