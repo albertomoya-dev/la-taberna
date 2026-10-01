@@ -144,6 +144,9 @@ local function OnSystemMessage(msg)
   if not Session.Active() then
     return
   end
+  -- Con el diagnóstico activo capturamos todos los mensajes de sistema para
+  -- ver exactamente qué suelta el cliente al terminar un duelo.
+  LogCapture({ kind = "system", msg = string.format("%q", tostring(msg)) })
   local myName = UnitName("player")
   local matchedWinner = nil
   for _, pattern in ipairs(duelPatterns) do
@@ -155,16 +158,6 @@ local function OnSystemMessage(msg)
       end
       break
     end
-  end
-  -- Captura de diagnóstico de cualquier mensaje que hable de duelos
-  if msg:lower():find("duelo", 1, true) then
-    LogCapture({
-      kind = "duel",
-      msg = string.format("%q", tostring(msg)),
-      pattern = duelPatterns[1],
-      matched = matchedWinner or false,
-      myName = myName,
-    })
   end
 end
 
@@ -248,11 +241,24 @@ function Stats.Init()
   local frame = CreateFrame("Frame")
   frame:RegisterEvent("CHAT_MSG_SYSTEM")
   frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
-  frame:SetScript("OnEvent", function(_, event, arg1)
+  -- Eventos nativos de duelo, por si Forever no usa el mensaje de sistema.
+  -- Se registran con pcall por si no existen en este cliente.
+  for _, ev in ipairs({ "DUEL_REQUESTED", "DUEL_FINISHED" }) do
+    pcall(frame.RegisterEvent, frame, ev)
+  end
+  frame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "CHAT_MSG_SYSTEM" then
       OnSystemMessage(arg1)
     elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
       OnXPGain(arg1)
+    elseif event == "DUEL_REQUESTED" or event == "DUEL_FINISHED" then
+      DebugPrint(event, arg1, arg2)
+      LogCapture({
+        kind = "event",
+        event = event,
+        arg1 = string.format("%q", tostring(arg1)),
+        arg2 = string.format("%q", tostring(arg2)),
+      })
     end
   end)
 end
