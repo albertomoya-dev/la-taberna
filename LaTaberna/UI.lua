@@ -672,6 +672,76 @@ function UI.ShowJoin()
 end
 
 -- ---------------------------------------------------------------------------
+-- Botón del minimapa: clic abre/cierra la ventana; arrastrar lo mueve por el
+-- borde. El ángulo se guarda en los ajustes.
+-- ---------------------------------------------------------------------------
+
+local minimapButton
+local MINIMAP_ICON = "Interface\\Icons\\INV_Misc_Beer_01"
+
+local function UpdateMinimapButtonPosition()
+  local angle = math.rad(LaTabernaDB.settings.minimapAngle or 220)
+  local radius = (Minimap:GetWidth() / 2) + 10
+  minimapButton:SetPoint("CENTER", Minimap, "CENTER",
+    math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+local function CreateMinimapButton()
+  local b = CreateFrame("Button", "LaTabernaMinimapButton", Minimap)
+  b:SetSize(31, 31)
+  b:SetFrameStrata("MEDIUM")
+  b:SetFrameLevel(8)
+  b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+  local icon = b:CreateTexture(nil, "BACKGROUND")
+  icon:SetSize(20, 20)
+  icon:SetPoint("CENTER", 0, 1)
+  icon:SetTexture(MINIMAP_ICON)
+
+  local border = b:CreateTexture(nil, "OVERLAY")
+  border:SetSize(53, 53)
+  border:SetPoint("TOPLEFT")
+  border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+
+  b:RegisterForClicks("LeftButtonUp")
+  b:RegisterForDrag("LeftButton")
+  b:SetScript("OnClick", function(self)
+    if self.moved then
+      self.moved = nil
+      return
+    end
+    UI.Toggle()
+  end)
+  b:SetScript("OnDragStart", function(self)
+    self:SetScript("OnUpdate", function()
+      local mx, my = Minimap:GetCenter()
+      local cx, cy = GetCursorPosition()
+      local scale = Minimap:GetEffectiveScale()
+      cx, cy = cx / scale, cy / scale
+      LaTabernaDB.settings.minimapAngle = math.deg(math.atan2(cy - my, cx - mx))
+      self.moved = true
+      UpdateMinimapButtonPosition()
+    end)
+  end)
+  b:SetScript("OnDragStop", function(self)
+    self:SetScript("OnUpdate", nil)
+  end)
+
+  b:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("La Taberna")
+    GameTooltip:AddLine("Clic: abrir o cerrar la ventana", 1, 1, 1)
+    GameTooltip:AddLine("Arrastrar: mover el icono", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  return b
+end
+
+-- ---------------------------------------------------------------------------
 -- Ventana principal
 -- ---------------------------------------------------------------------------
 
@@ -749,6 +819,8 @@ function UI.Init()
   picker = CreatePicker()
   editDialog = CreateEditDialog()
   textDialog = CreateTextDialog()
+  minimapButton = CreateMinimapButton()
+  UpdateMinimapButtonPosition()
   SelectTab(1)
   SelectLeagueKind(1)
   UI.Refresh()
