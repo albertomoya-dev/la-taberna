@@ -145,15 +145,26 @@ local function OnSystemMessage(msg)
     return
   end
   local myName = UnitName("player")
+  local matchedWinner = nil
   for _, pattern in ipairs(duelPatterns) do
-    local winner = msg:match(pattern)
-    if winner then
-      DebugPrint("fin de duelo · ganador:", winner, "· yo:", myName)
-      if winner == myName then
+    matchedWinner = msg:match(pattern)
+    if matchedWinner then
+      DebugPrint("fin de duelo · ganador:", matchedWinner, "· yo:", myName)
+      if matchedWinner == myName then
         Stats.AddLocal("duels", 1)
       end
-      return
+      break
     end
+  end
+  -- Captura de diagnóstico de cualquier mensaje que hable de duelos
+  if msg:lower():find("duelo", 1, true) then
+    LogCapture({
+      kind = "duel",
+      msg = string.format("%q", tostring(msg)),
+      pattern = duelPatterns[1],
+      matched = matchedWinner or false,
+      myName = myName,
+    })
   end
 end
 
