@@ -191,6 +191,7 @@ function Stats.ToggleDebug()
       .. tostring(C_EventUtils.IsEventValid("COMBAT_LOG_EVENT_UNFILTERED")))
   end
   Session.Print("Patrones de duelo: " .. #duelPatterns .. " · patrones de XP: " .. #xpPatterns)
+  Session.Print("GL XP: " .. tostring(COMBATLOG_XPGAIN_FIRSTPERSON))
   return debug
 end
 
