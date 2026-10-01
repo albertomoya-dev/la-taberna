@@ -229,6 +229,59 @@ local function OnXPGain(msg)
 end
 
 -- ---------------------------------------------------------------------------
+-- Rares: el combat log está bloqueado, así que se detectan por eventos de
+-- unidad. Al targetear o pasar el ratón sobre un rare se marca su GUID; si
+-- ese GUID muere (UNIT_HEALTH), cuenta. Una vez por GUID por sesión de juego.
+-- ---------------------------------------------------------------------------
+
+local rareSeen = {}
+local rareCounted = {}
+
+local function MarkRareIfApplicable(unit)
+  if not Session.Active() then
+    return
+  end
+  local okC, classification = pcall(UnitClassification, unit)
+  if not okC or (classification ~= "rare" and classification ~= "rareelite") then
+    return
+  end
+  local okG, guid = pcall(UnitGUID, unit)
+  if not okG or type(guid) ~= "string" then
+    return
+  end
+  if not rareSeen[guid] then
+    local okN, name = pcall(UnitName, unit)
+    rareSeen[guid] = (okN and name) or "?"
+    LogCapture({
+      kind = "rare-seen",
+      guid = string.format("%q", guid),
+      name = rareSeen[guid],
+      classification = classification,
+    })
+  end
+end
+
+local function OnUnitHealth(unit)
+  if not Session.Active() then
+    return
+  end
+  local okD, dead = pcall(UnitIsDeadOrGhost, unit)
+  if not okD or not dead then
+    return
+  end
+  local okG, guid = pcall(UnitGUID, unit)
+  if not okG or type(guid) ~= "string" then
+    return
+  end
+  if not rareSeen[guid] or rareCounted[guid] then
+    return
+  end
+  rareCounted[guid] = true
+  LogCapture({ kind = "rare-dead", guid = string.format("%q", guid), name = rareSeen[guid] })
+  Stats.AddLocal("rares", 1)
+end
+
+-- ---------------------------------------------------------------------------
 -- Oro ganado: PLAYER_MONEY se dispara cuando cambia el dinero; solo sumamos
 -- los incrementos (gastar no resta en la liga). Valores en cobre.
 -- ---------------------------------------------------------------------------
@@ -286,6 +339,10 @@ function Stats.Init()
   frame:RegisterEvent("CHAT_MSG_SYSTEM")
   frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
   frame:RegisterEvent("PLAYER_MONEY")
+  frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+  frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+  frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+  pcall(frame.RegisterUnitEvent, frame, "UNIT_HEALTH", "target", "mouseover", "focus")
   lastMoney = GetMoney()
   -- Eventos nativos de duelo, por si Forever no usa el mensaje de sistema.
   -- Se registran con pcall por si no existen en este cliente.
@@ -308,6 +365,14 @@ function Stats.Init()
       OnXPGain(arg1)
     elseif event == "PLAYER_MONEY" then
       OnMoney()
+    elseif event == "PLAYER_TARGET_CHANGED" then
+      MarkRareIfApplicable("target")
+    elseif event == "UPDATE_MOUSEOVER_UNIT" then
+      MarkRareIfApplicable("mouseover")
+    elseif event == "PLAYER_FOCUS_CHANGED" then
+      MarkRareIfApplicable("focus")
+    elseif event == "UNIT_HEALTH" then
+      OnUnitHealth(arg1)
     elseif event == "DUEL_REQUESTED" or event == "DUEL_FINISHED" then
       DebugPrint(event, arg1, arg2)
       LogCapture({
