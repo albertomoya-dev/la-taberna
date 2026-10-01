@@ -113,18 +113,29 @@ end
 
 local duelPatterns = {}
 
-local function MakeDuelPattern(globalString)
-  local p = globalString:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-  p = p:gsub("%%1%$s", "(.-)")
-  p = p:gsub("%%2%$s", "(.-)")
-  return "^" .. p .. "$"
+-- Construye un patrón Lua a partir de un globalstring con comodines
+-- (%s, %d, %1$s, %2$d…). Primero se sustituyen los comodines por bytes de
+-- control, se escapa la puntuación mágica y al final se insertan los patrones
+-- de captura. Así no quedan restos de escape a medias.
+local function MessagePattern(globalString, anchorEnd)
+  local p = globalString:gsub("%%[0-9]+%$s", "\1")
+  p = p:gsub("%%s", "\1")
+  p = p:gsub("%%[0-9]+%$d", "\2")
+  p = p:gsub("%%d", "\2")
+  p = p:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+  p = p:gsub("\1", "(.-)")
+  p = p:gsub("\2", "%%d+")
+  if anchorEnd then
+    return "^" .. p .. "$"
+  end
+  return "^" .. p
 end
 
 local function BuildDuelPatterns()
   duelPatterns = {}
   for _, gs in ipairs({ DUEL_WINNER_KNOCKOUT, DUEL_WINNER_RETREAT }) do
     if type(gs) == "string" then
-      duelPatterns[#duelPatterns + 1] = MakeDuelPattern(gs)
+      duelPatterns[#duelPatterns + 1] = MessagePattern(gs, true)
     end
   end
 end
@@ -155,21 +166,12 @@ end
 
 local xpPatterns = {}
 
-local function MakeXPPattern(globalString)
-  local p = globalString:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-  p = p:gsub("%%[0-9]%$s", "(.-)")
-  p = p:gsub("%%s", "(.-)")
-  p = p:gsub("%%[0-9]%$d", "%d+")
-  p = p:gsub("%%d", "%d+")
-  -- Sin anclar al final: puede llevar sufijos (bonus de descanso, etc.)
-  return "^" .. p
-end
-
 local function BuildXPPatterns()
   xpPatterns = {}
   for _, gs in ipairs({ COMBATLOG_XPGAIN_FIRSTPERSON }) do
     if type(gs) == "string" then
-      xpPatterns[#xpPatterns + 1] = MakeXPPattern(gs)
+      -- Sin anclar al final: puede llevar sufijos (bonus de descanso, etc.)
+      xpPatterns[#xpPatterns + 1] = MessagePattern(gs, false)
     end
   end
 end
