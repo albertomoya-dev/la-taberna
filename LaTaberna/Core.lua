@@ -84,6 +84,7 @@ local function PrintHelp()
   print("  /taberna import — importa un respaldo")
   print("  /taberna stat <id> — diagnóstico: muestra GetStatistic(id)")
   print("  /taberna scanstats <desde> <hasta> — diagnóstico: estadísticas con valor")
+  print("  /taberna depura — activa/desactiva el diagnóstico de contadores")
 end
 
 SLASH_LATABERNA1 = "/taberna"
@@ -103,6 +104,8 @@ SlashCmdList["LATABERNA"] = function(msg)
     LaTaberna.UI.ShowExport()
   elseif cmd == "import" then
     LaTaberna.UI.ShowImport()
+  elseif cmd == "depura" then
+    LaTaberna.Stats.ToggleDebug()
   elseif cmd == "stat" then
     local id = tonumber(msg:match("^%S+%s+(%d+)") or "")
     if id and GetStatistic then

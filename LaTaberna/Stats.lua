@@ -15,6 +15,14 @@ Stats.LABELS = {
   rares = "Rares derrotados",
 }
 
+local debug = false
+
+local function DebugPrint(...)
+  if debug then
+    print("|cffe6c34aLT-Debug:|r", ...)
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- Acceso al estado
 -- ---------------------------------------------------------------------------
@@ -112,6 +120,7 @@ local function OnSystemMessage(msg)
   for _, pattern in ipairs(duelPatterns) do
     local winner = msg:match(pattern)
     if winner then
+      DebugPrint("fin de duelo · ganador:", winner, "· yo:", myName)
       if winner == myName then
         Stats.AddLocal("duels", 1)
       end
@@ -128,20 +137,32 @@ end
 
 local myGuid = nil
 
+function Stats.ToggleDebug()
+  debug = not debug
+  Session.Print("Diagnóstico de contadores: " .. (debug and "ACTIVADO" or "desactivado"))
+  Session.Print("Sesión activa: " .. tostring(Session.Active() ~= nil)
+    .. " · GUID propio: " .. tostring(myGuid ~= nil))
+  return debug
+end
+
 local function OnCombatLog()
   if not Session.Active() or not myGuid then
+    DebugPrint("sin sesión o sin GUID; evento ignorado")
     return
   end
   local ok, _, subevent, _, sourceGUID, _, _, _, _, _, destFlags =
     pcall(CombatLogGetCurrentEventInfo)
   if not ok then
+    DebugPrint("error leyendo el evento de combate (valores secretos?)")
     return
   end
+  DebugPrint("subevento:", subevent)
   if subevent == "PARTY_KILL" then
     -- Muerte con el golpe de gracia de alguien del grupo; solo cuentan las mías.
     local okMine, isMine = pcall(function()
       return sourceGUID == myGuid
     end)
+    DebugPrint("PARTY_KILL · comparación GUID ok:", okMine, "· es mío:", isMine)
     if okMine and isMine then
       Stats.AddLocal("kills", 1)
     end
@@ -151,6 +172,7 @@ local function OnCombatLog()
       return classification == COMBATLOG_OBJECT_CLASSIFICATION_RARE
         or classification == COMBATLOG_OBJECT_CLASSIFICATION_RAREELITE
     end)
+    DebugPrint("UNIT_DIED · flags ok:", okRare, "· es rare:", isRare)
     if okRare and isRare then
       Stats.AddLocal("rares", 1)
     end
