@@ -148,13 +148,19 @@ local function OnSystemMessage(msg)
   -- Con el diagnóstico activo capturamos todos los mensajes de sistema para
   -- ver exactamente qué suelta el cliente al terminar un duelo.
   LogCapture({ kind = "system", msg = string.format("%q", tostring(msg)) })
+  -- El mensaje de fin de duelo nombra al ganador como "Nombre Reino"
+  -- (con espacio, sin guion), así que comparamos todas las variantes.
   local myName = UnitName("player")
+  local realm = GetRealmName() or ""
+  local normRealm = GetNormalizedRealmName() or realm
   local matchedWinner = nil
   for _, pattern in ipairs(duelPatterns) do
     matchedWinner = msg:match(pattern)
     if matchedWinner then
       DebugPrint("fin de duelo · ganador:", matchedWinner, "· yo:", myName)
-      if matchedWinner == myName then
+      if matchedWinner == myName
+        or matchedWinner == myName .. " " .. realm
+        or matchedWinner == myName .. " " .. normRealm then
         Stats.AddLocal("duels", 1)
       end
       break
