@@ -169,16 +169,17 @@ local MEDAL_COLORS = {
   { 0.8, 0.5, 0.2 },
 }
 
--- Pinta el punto de conexión de una fila (verde online, gris offline).
+-- Pinta el punto de conexión de una fila con los indicadores circulares del
+-- juego (los de la lista de amigos): verde online, gris offline.
 local function SetRowOnline(row, account)
   if not account then
     row.dot:Hide()
     return
   end
   if Session.IsAccountOnline(account) then
-    row.dot:SetColorTexture(0.2, 1, 0.2, 1)
+    row.dot:SetTexture("Interface\\COMMON\\Indicator-Green")
   else
-    row.dot:SetColorTexture(0.45, 0.45, 0.45, 1)
+    row.dot:SetTexture("Interface\\COMMON\\Indicator-Gray")
   end
   row.dot:Show()
 end
