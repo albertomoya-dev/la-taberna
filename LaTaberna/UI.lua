@@ -647,8 +647,11 @@ local function CreateSessionTab(parent)
     UI.Refresh()
   end
 
-  -- Versión, abajo a la derecha y discreta
-  sessionLines[8] = MakeText(f, "GameFontDisableSmall", 280, -336, 296, 12, "RIGHT")
+  -- Versión, pegada al borde inferior derecho y discreta
+  local versionLine = MakeText(f, "GameFontDisableSmall", 0, 0, 296, 12, "RIGHT")
+  versionLine:ClearAllPoints()
+  versionLine:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 2)
+  sessionLines[8] = versionLine
 
   return f
 end
