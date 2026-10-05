@@ -293,11 +293,9 @@ local RefreshLeague
 local function SelectLeagueKind(index)
   leagueKind = Stats.KINDS[index]
   for i, b in ipairs(leagueSubButtons) do
-    if i == index then
-      b:Disable()
-    else
-      b:Enable()
-    end
+    local selected = i == index
+    b.marker:SetColorTexture(1, 0.82, 0, selected and 1 or 0)
+    b.label:SetTextColor(unpack(selected and GOLD or WHITE))
   end
   if PlaySound and SOUNDKIT then
     PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
@@ -309,19 +307,28 @@ local function CreateLeagueTab(parent)
   local f = CreateFrame("Frame", nil, parent)
   f:SetAllPoints()
 
+  -- Menú lateral con los tipos de ranking; la marca dorada señala el activo.
   for i, kind in ipairs(Stats.KINDS) do
-    local b = MakeButton(f, Stats.SHORT_LABELS[kind], 112, 20)
-    b:SetPoint("TOPLEFT", 4 + (i - 1) * 116, -4)
-    leagueSubButtons[i] = b
+    local b = CreateFrame("Button", nil, f)
+    b:SetPoint("TOPLEFT", 4, -8 - (i - 1) * 24)
+    b:SetSize(116, 22)
+    b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    b.marker = MakeFill(b, 0, 0, 3, 22, 1, 0.82, 0, 0)
+    b.label = MakeText(b, "GameFontHighlightSmall", 10, 0, 102, 22)
+    b.label:SetText(Stats.SHORT_LABELS[kind])
     b:SetScript("OnClick", function()
       SelectLeagueKind(i)
     end)
+    leagueSubButtons[i] = b
   end
 
-  leagueHeader = MakeText(f, "GameFontNormal", 4, -32, 440, 16)
+  -- Separador vertical entre el menú y la lista.
+  MakeFill(f, 126, -4, 1, 320, 1, 1, 1, 0.1)
+
+  leagueHeader = MakeText(f, "GameFontNormal", 136, -8, 430, 16)
 
   for i = 1, LEAGUE_ROWS do
-    leagueRows[i] = MakeRankRow(f, 4, -54 - (i - 1) * 17, 560, i)
+    leagueRows[i] = MakeRankRow(f, 136, -30 - (i - 1) * 17, 432, i)
   end
   return f
 end
@@ -972,15 +979,11 @@ local function CreateMainFrame()
   tinsert(UISpecialFrames, "LaTabernaFrame")
   f:Hide()
 
-  -- Pie con el aviso de precisión de los datos.
-  local footer = MakeText(f, "GameFontDisableSmall", 14, -(H - 30), W - 28, 12)
-  footer:SetText("Los contadores los reporta el juego o el cliente de cada participante; un valor ausente no es un cero.")
-
   -- Contenido de las pestañas, dentro del marco.
   for i = 1, #TAB_NAMES do
     local content = CreateFrame("Frame", nil, f)
     content:SetPoint("TOPLEFT", 16, -66)
-    content:SetPoint("BOTTOMRIGHT", -16, 42)
+    content:SetPoint("BOTTOMRIGHT", -16, 16)
     tabFrames[i] = content
   end
 
