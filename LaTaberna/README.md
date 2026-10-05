@@ -22,8 +22,16 @@ usa el canal de addon `GUILD`.
 | `/taberna` | Abre o cierra la ventana |
 | `/taberna crear` | Crea una sesión (serás el organizador) |
 | `/taberna salir` | Sale de la sesión; el organizador la cierra para todos |
-| `/taberna export` | Muestra un respaldo copiable del estado |
-| `/taberna import` | Restaura un respaldo |
+| `/taberna unirse <código>` | Te unes con un código de invitación |
+| `/taberna alias <nombre>` | Alias visible en la liga (vacío = BattleTag) |
+| `/taberna export` / `import` | Respaldo copiable del estado |
+| `/taberna jugado` | Tiempo jugado de tu cuenta, por personaje |
+| `/taberna anunciar` | Publica el top 5 en el chat de hermandad |
+| `/taberna escala 0.6-1.6` | Tamaño de la ventana (`reset` = defecto) |
+| `/taberna estado` | Versiones, APIs y estado de la sesión |
+| `/taberna depura` | Diagnóstico de contadores |
+| `/taberna stat <id>` | Muestra `GetStatistic(id)` |
+| `/taberna scanstats <a> <b>` | Lista estadísticas con valor en un rango |
 
 ## Reglas de la liga (propuesta inicial)
 
@@ -42,13 +50,24 @@ usa el canal de addon `GUILD`.
 
 - `Rules.lua` — lógica pura: retos, puntos y clasificación. Sin API de WoW.
 - `Protocol.lua` — formato de mensajes `OP|pv|sid|eid|campos…` con escape.
-- `Storage.lua` — `SavedVariables` con versión de esquema y export/import.
-- `Session.lua` — participantes, rol de organizador y aplicación de eventos.
+- `Sounds.lua` — efectos de sonido (SOUNDKITs verificados del cliente, con
+  cadenas de reserva).
+- `Storage.lua` — `SavedVariables` con versión de esquema, validación
+  estricta al cargar y export/import.
+- `Session.lua` — participantes, rol de organizador, alias, estado online y
+  aplicación de eventos.
 - `Communication.lua` — cola con prioridad y ritmo limitado, snapshots
   troceados por susurro.
-- `Stats.lua` — contadores de enemigos, duelos y rares (registro de combate y
-  mensajes de duelo, con protección ante valores secretos) y su difusión.
-- `UI.lua` — ventana con pestañas (Clasificación, Liga, Retos, Sesión).
+- `Stats.lua` — contadores de la liga: enemigos, duelos (ganados y
+  perdidos), misiones, muertes y honor por **deltas de `GetStatistic`** (IDs
+  verificados contra `Achievement.db2` del build 1.60.1); oro por
+  `PLAYER_MONEY`; rares por eventos de unidad. Detección de cambios de
+  liderato con anuncio y sonido.
+- `Played.lua` — tiempo jugado por `RequestTimePlayed` (silenciando el
+  mensaje de chat propio), agregado por cuenta a partir de sus personajes.
+- `UI.lua` — ventana con plantillas nativas (`ButtonFrameTemplate`,
+  pestañas inferiores, filas rayadas, iconos de moneda), cinco pestañas:
+  Clasificación, Liga, Retos, Historial y Sesión.
 - `Core.lua` — inicialización, eventos y comandos.
 
 El id de sesión es `CuentaOrganizador:timestamp`, así que cualquier mensaje
@@ -60,20 +79,16 @@ responde con un snapshot troceado (`SNAP`).
 
 ## Checklist de pruebas en el cliente (Forever)
 
-Pendiente de verificar en el juego real; la API puede cambiar antes del
-lanzamiento.
-
-- [ ] El addon carga sin errores con `/console scriptErrors 1`.
-- [ ] `## Interface:` del `.toc` coincide con `GetBuildInfo()`.
-- [ ] `/taberna` abre y cierra la ventana; se cierra también con Esc.
-- [ ] Crear sesión: aparecen los 3 retos y el organizador en la pestaña Sesión.
+- [x] El addon carga sin errores con `/console scriptErrors 1`.
+- [x] `## Interface:` del `.toc` coincide con `GetBuildInfo()` (16001).
+- [x] `/taberna` abre y cierra la ventana; se cierra también con Esc.
+- [x] Crear sesión: aparecen los 3 retos y el organizador en la pestaña Sesión.
 - [ ] Un segundo jugador recibe la invitación y se une; ambos ven al otro en
       la clasificación.
 - [ ] El organizador confirma un reto y **ambos** clientes muestran los mismos
       puntos.
 - [ ] Editar un reto propaga el cambio al otro cliente.
-- [ ] `/reload` mantiene la sesión; **logout → login también** (en la beta se
-      reportaron fallos de `SavedVariables`; si falla, usar export/import).
+- [x] `/reload` mantiene la sesión; **logout → login también**.
 - [ ] Reconexión: un participante que entra tarde recibe el snapshot completo.
 - [ ] Con el organizador desconectado, la pestaña Sesión indica
       "confirmaciones en pausa".
@@ -81,9 +96,11 @@ lanzamiento.
 
 ## Limitaciones conocidas
 
-- Sin métricas automáticas de combate (valores secretos de Forever).
+- Forever bloquea el registro de combate para addons; los contadores usan las
+  estadísticas nativas del juego y eventos permitidos (ver `Stats.lua`).
+- No existe estadística nativa de rares: se detectan por eventos de unidad.
 - Sin comunicación HTTP: no hay backend ni web en esta versión.
-- La clasificación muestra 21 filas y el selector de participantes 20; si el
+- La clasificación muestra 15 filas y el selector de participantes 20; si el
   grupo crece más, habrá que añadir scroll.
 - Sin elección automática de organizador: si se va, la sesión queda en pausa.
 

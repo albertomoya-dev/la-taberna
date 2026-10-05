@@ -59,19 +59,32 @@ sincronización usa el canal de addon `GUILD`.
 | `/taberna` | Abre o cierra la ventana |
 | `/taberna crear` | Crea una sesión (serás el organizador) |
 | `/taberna salir` | Sale de la sesión; el organizador la cierra para todos |
-| `/taberna export` | Muestra un respaldo copiable del estado |
-| `/taberna import` | Restaura un respaldo |
+| `/taberna unirse <código>` | Te unes a una liga con su código de invitación |
+| `/taberna alias <nombre>` | Te pones un alias (vacío para volver al BattleTag) |
+| `/taberna export` / `import` | Respaldo copiable del estado |
+| `/taberna jugado` | Tu tiempo jugado por cuenta, con desglose por personaje |
+| `/taberna anunciar` | Publica el top 5 de la clasificación en el chat de hermandad |
+| `/taberna escala 0.6-1.6` | Tamaño de la ventana (`reset` para el defecto) |
+| `/taberna estado` | Versiones, APIs disponibles y estado de la sesión |
+| `/taberna depura` | Activa el diagnóstico de contadores |
 
-La ventana tiene cuatro pestañas:
+La ventana tiene cinco pestañas:
 
-- **Clasificación** — puntos de cada participante, en orden.
-- **Liga** — tres rankings automáticos con sub-pestañas: **enemigos
-  derrotados** (golpes de gracia), **duelos ganados** y **rares derrotados**.
-  Cada addon cuenta los suyos y los comparte con el grupo.
+- **Clasificación** — puntos de cada participante, con medallas de
+  oro/plata/bronce en el podio y un punto verde/gris de conexión.
+- **Liga** — rankings automáticos con menú lateral: **enemigos derrotados**,
+  **duelos ganados y perdidos**, **rares**, **oro ganado**, **tiempo jugado**,
+  **misiones**, **muertes** y **muertes con honor**. Cada addon cuenta los
+  suyos y los comparte con el grupo.
 - **Retos** — los 3 retos activos; el organizador ve además los botones
   *Confirmar…* (elegir quién lo completó) y *Editar*.
-- **Sesión** — organizador, tu rol, participantes, código de invitación,
-  respaldo (export/import) y borrado de datos.
+- **Historial** — las sesiones cerradas, más recientes primero.
+- **Sesión** — estado en dos columnas, invitaciones, respaldo y zona
+  peligrosa (borrado con doble confirmación).
+
+Además: icono de minimapa arrastrable con estado de la sesión en el tooltip,
+sonidos al confirmar resultados, recibir invitaciones o perder el liderato de
+un ranking, y anuncio en el chat cuando alguien toma el liderato.
 
 ### Código de invitación
 
@@ -111,24 +124,26 @@ pruebas en el cliente) está en [`LaTaberna/README.md`](LaTaberna/README.md).
 
 ## Limitaciones conocidas
 
-- **Nada de métricas de combate automáticas**: Forever **bloquea** que los
-  addons se suscriban al registro de combate (es acción protegida). Por eso:
-  - Enemigos: se cuentan por los **mensajes de XP** ("X muere, obtienes N
-    experiencia"). Solo suman muertes que dan XP: las criaturas grises no.
-  - Duelos: se detectan por los **mensajes de sistema** de fin de duelo.
-  - Rares: **sin fuente automática por ahora**; el ranking existe pero no sube
-    hasta encontrar una vía permitida o pasarlo a confirmación del líder.
-- Los comandos `/taberna stat <id>` y `/taberna scanstats <a> <b>` ayudan a
-  buscar fuentes alternativas en el panel de estadísticas del juego.
-- La clasificación muestra 21 filas y el selector de participantes 20; para
+- Forever **bloquea** que los addons se suscriban al registro de combate (es
+  acción protegida). Por eso los contadores no usan el combat log:
+  - Enemigos, duelos (ganados y perdidos), misiones, muertes y honor se leen
+    de las **estadísticas nativas del juego** (`GetStatistic`, IDs verificados
+    contra `Achievement.db2` del build 1.60.1), contando solo los incrementos
+    desde que entraste en la liga. Inmune a traducciones y no se pierde nada.
+  - Oro: por el evento `PLAYER_MONEY` (solo suman los incrementos).
+  - Tiempo jugado: por `RequestTimePlayed`, sumando los personajes de la
+    cuenta (el servidor limita el ritmo: una petición por personaje y sesión).
+  - Rares: se detectan por **eventos de unidad** (clasificación rare +
+    muerte); no existe estadística nativa de rares.
+- Los comandos `/taberna stat <id>` y `/taberna scanstats <a> <b>` son
+  herramientas de diagnóstico sobre el panel de estadísticas del juego.
+- La clasificación muestra 15 filas y el selector de participantes 20; para
   grupos mayores habrá que añadir scroll.
 - Es un diseño para un **grupo de confianza**, no un sistema antitrampas.
 
 ## Roadmap
 
-- **Fase 2 — Robustez**: historial navegable, más tolerancia a mensajes
-  desordenados.
-- **Fase 3 — Minijuegos**: bingo cooperativo, contratos secretos, liga de
-  duelos, premios de la sesión por votación, quiz de Warcraft.
-- **Fase 4 — Automatización** con eventos no restringidos: subida de nivel,
-  llegada a zonas, muertes (para premios de humor).
+- **Minijuegos**: bingo cooperativo, contratos secretos, liga de duelos,
+  premios de la sesión por votación, quiz de Warcraft.
+- **Más automatización** con eventos no restringidos: subida de nivel,
+  llegada a zonas.

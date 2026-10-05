@@ -581,6 +581,9 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
       ArchiveSession(s)
       Storage.SetSession(nil)
       Print("El organizador ha cerrado la sesión.")
+      if LaTaberna.Sounds then
+        LaTaberna.Sounds.Play("leave")
+      end
       Refresh()
     end
   end
