@@ -1,9 +1,9 @@
 # La Taberna
 
 Addon privado de liga para un grupo de amigos en WoW Forever. Una temporada
-compartida con retos, puntos y clasificación, sincronizada por el canal de
-hermandad. La validación la hace el organizador: es un diseño para un grupo de
-confianza, no un sistema antitrampas.
+compartida con rankings automáticos (enemigos, duelos, oro, tiempo jugado,
+profesiones…) y una puntuación general, sincronizada por el canal de
+hermandad. Es un diseño para un grupo de confianza, no un sistema antitrampas.
 
 ## Instalación
 
@@ -33,22 +33,24 @@ usa el canal de addon `GUILD`.
 | `/taberna stat <id>` | Muestra `GetStatistic(id)` |
 | `/taberna scanstats <a> <b>` | Lista estadísticas con valor en un rango |
 
-## Reglas de la liga (propuesta inicial)
+## Reglas de la liga
 
-- Los puntos solo los concede el organizador, confirmando resultados desde la
-  pestaña **Retos**.
-- Hay 3 retos activos por sesión, editables por el organizador.
-- Retos iniciales de ejemplo:
-  - **Mazmorra elegida** — 10 pt por participante que la complete.
-  - **Rally por Azeroth** — 5 pt al ganador del rally previo.
-  - **Contrato cumplido** — 3 pt por contrato secreto revelado y aceptado.
-- Si el organizador está desconectado, las confirmaciones quedan en pausa.
-- Ajustad las reglas tras las primeras sesiones; lo importante es que el que
-  más juega no gane automáticamente.
+- La puntuación general sale de los rankings automáticos con un **sistema
+  Borda** (`Rules.ComputeLeagueScore`): en cada tipo de ranking, el 1.º suma N
+  puntos, el 2.º N−1… donde N = participantes con valor > 0 en ese tipo; los
+  empates comparten puntos. Solo importa la posición, no la magnitud, así las
+  escalas distintas (oro, tiempo, duelos) pesan lo mismo.
+- Los rankings se alimentan solos: cada cliente cuenta lo suyo (ver
+  `Stats.lua`, `Played.lua` y `Professions.lua`) y lo difunde al grupo.
+- Si el organizador está desconectado, la sesión queda en pausa.
+- El backend de retos (`Session.results`, mensajes `CHAL`/`RES`) sigue
+  existiendo en el protocolo — de él depende el flujo de invitación —, pero ya
+  no tiene interfaz ni alimenta la clasificación.
 
 ## Cómo funciona por dentro
 
-- `Rules.lua` — lógica pura: retos, puntos y clasificación. Sin API de WoW.
+- `Rules.lua` — lógica pura: retos (backend del protocolo) y puntuación
+  general Borda (`ComputeLeagueScore`). Sin API de WoW.
 - `Protocol.lua` — formato de mensajes `OP|pv|sid|eid|campos…` con escape.
 - `Sounds.lua` — efectos de sonido (SOUNDKITs verificados del cliente, con
   cadenas de reserva).
@@ -66,8 +68,8 @@ usa el canal de addon `GUILD`.
 - `Played.lua` — tiempo jugado por `RequestTimePlayed` (silenciando el
   mensaje de chat propio), agregado por cuenta a partir de sus personajes.
 - `UI.lua` — ventana con plantillas nativas (`ButtonFrameTemplate`,
-  pestañas inferiores, filas rayadas, iconos de moneda), cinco pestañas:
-  Clasificación, Liga, Retos, Historial y Sesión.
+  pestañas inferiores, filas rayadas, iconos de moneda), cuatro pestañas:
+  Clasificación, Liga, Historial y Sesión.
 - `Core.lua` — inicialización, eventos y comandos.
 
 El id de sesión es `CuentaOrganizador:timestamp`, así que cualquier mensaje
@@ -82,12 +84,11 @@ responde con un snapshot troceado (`SNAP`).
 - [x] El addon carga sin errores con `/console scriptErrors 1`.
 - [x] `## Interface:` del `.toc` coincide con `GetBuildInfo()` (16001).
 - [x] `/taberna` abre y cierra la ventana; se cierra también con Esc.
-- [x] Crear sesión: aparecen los 3 retos y el organizador en la pestaña Sesión.
+- [x] Crear sesión: aparece el organizador en la pestaña Sesión.
 - [ ] Un segundo jugador recibe la invitación y se une; ambos ven al otro en
       la clasificación.
-- [ ] El organizador confirma un reto y **ambos** clientes muestran los mismos
-      puntos.
-- [ ] Editar un reto propaga el cambio al otro cliente.
+- [ ] Los rankings automáticos coinciden en ambos clientes.
+- [ ] La puntuación general (Borda) coincide en ambos clientes.
 - [x] `/reload` mantiene la sesión; **logout → login también**.
 - [ ] Reconexión: un participante que entra tarde recibe el snapshot completo.
 - [ ] Con el organizador desconectado, la pestaña Sesión indica
@@ -100,8 +101,8 @@ responde con un snapshot troceado (`SNAP`).
   estadísticas nativas del juego y eventos permitidos (ver `Stats.lua`).
 - No existe estadística nativa de rares: se detectan por eventos de unidad.
 - Sin comunicación HTTP: no hay backend ni web en esta versión.
-- La clasificación muestra 15 filas y el selector de participantes 20; si el
-  grupo crece más, habrá que añadir scroll.
+- La clasificación muestra 15 filas y cada ranking de la liga 14; si el grupo
+  crece más, habrá que añadir scroll.
 - Sin elección automática de organizador: si se va, la sesión queda en pausa.
 
 ## Próximas fases

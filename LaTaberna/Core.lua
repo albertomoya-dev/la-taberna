@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.6.0"
+Core.VERSION = "0.7.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -165,8 +165,8 @@ SlashCmdList["LATABERNA"] = function(msg)
     elseif not IsInGuild() then
       Session.Print("No estás en una hermandad.")
     else
-      SendChatMessage("La Taberna — Clasificación de la liga:", "GUILD")
-      local board = LaTaberna.Rules.ComputeLeaderboard(s)
+      SendChatMessage("La Taberna — Puntuación general de la liga:", "GUILD")
+      local board = LaTaberna.Rules.ComputeLeagueScore(s)
       local shown = 0
       for i, entry in ipairs(board) do
         if i > 5 then

@@ -52,24 +52,67 @@ function Rules.NewChallengeId(session)
   return "c" .. (max + 1)
 end
 
--- Clasificación derivada exclusivamente de los resultados confirmados.
-function Rules.ComputeLeaderboard(session)
-  local points = {}
+function Rules.CanConfirm(session, challengeId, participant)
+  return Rules.GetChallenge(session, challengeId) ~= nil
+    and session.participants ~= nil
+    and session.participants[participant] ~= nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Puntuación general de la liga (sistema Borda sobre todos los rankings).
+-- En cada tipo (enemigos, duelos, oro…), el 1.º suma N puntos, el 2.º N-1,
+-- etc., donde N = participantes con valor > 0 en ese tipo. Los empates
+-- comparten puntos. Solo importa la POSICIÓN en cada ranking, así no se
+-- mezclan escalas (miles de oro vs. unos pocos duelos).
+-- Devuelve: board (ordenado) y details[cuenta] = { "Tipo: pos.º (+puntos)"… }
+-- ---------------------------------------------------------------------------
+
+function Rules.ComputeLeagueScore(session)
+  local score = {}
+  local details = {}
   if session and session.participants then
-    for name in pairs(session.participants) do
-      points[name] = 0
+    for account in pairs(session.participants) do
+      score[account] = 0
+      details[account] = {}
     end
   end
-  if session and session.results then
-    for _, r in ipairs(session.results) do
-      if points[r.participant] ~= nil then
-        points[r.participant] = points[r.participant] + (r.points or 0)
+  local Stats = LaTaberna.Stats
+  if not Stats then
+    return {}, details
+  end
+  for _, kind in ipairs(Stats.KINDS) do
+    local board = Stats.ComputeLeaderboard(kind)
+    local n = 0
+    for _, e in ipairs(board) do
+      if e.value > 0 then
+        n = n + 1
       end
+    end
+    local label = Stats.SHORT_LABELS[kind] or kind
+    local i = 1
+    while i <= #board do
+      if board[i].value <= 0 then
+        break
+      end
+      local j = i
+      while j <= #board and board[j].value == board[i].value do
+        j = j + 1
+      end
+      local pts = n - i + 1
+      for k = i, j - 1 do
+        local account = board[k].name
+        if score[account] then
+          score[account] = score[account] + pts
+          details[account][#details[account] + 1] =
+            label .. ": " .. i .. ".º (+" .. pts .. ")"
+        end
+      end
+      i = j
     end
   end
   local board = {}
-  for name, p in pairs(points) do
-    board[#board + 1] = { name = name, points = p }
+  for account, pts in pairs(score) do
+    board[#board + 1] = { name = account, points = pts }
   end
   table.sort(board, function(a, b)
     if a.points ~= b.points then
@@ -77,11 +120,5 @@ function Rules.ComputeLeaderboard(session)
     end
     return a.name < b.name
   end)
-  return board
-end
-
-function Rules.CanConfirm(session, challengeId, participant)
-  return Rules.GetChallenge(session, challengeId) ~= nil
-    and session.participants ~= nil
-    and session.participants[participant] ~= nil
+  return board, details
 end

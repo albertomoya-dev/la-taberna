@@ -11,12 +11,11 @@ local Stats = LaTaberna.Stats
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.6.0"
+local ADDON_VERSION = "0.7.0"
 local W, H = 620, 440   -- tamaño base, antes de la escala
 local DEFAULT_SCALE = 1.0
 local MAX_ROWS = 15     -- filas visibles de la clasificación
 local LEAGUE_ROWS = 14  -- filas visibles por ranking de la liga
-local PICKER_ROWS = 20  -- participantes seleccionables a la vez
 
 local main
 local tabButtons = {}
@@ -30,14 +29,11 @@ local leagueRows = {}
 local leagueHeader
 local leagueSubButtons = {}
 local leagueKind = "kills"
-local challengeBlocks = {}
 local sessionLines = {}
 local sessionButtons = {}
-local picker
-local editDialog
 local textDialog
 
-local TAB_NAMES = { "Clasificación", "Liga", "Retos", "Historial", "Sesión" }
+local TAB_NAMES = { "Clasificación", "Liga", "Historial", "Sesión" }
 
 -- Colores
 local GOLD = { 1, 0.82, 0 }
@@ -300,8 +296,8 @@ local function RefreshLeaderboard()
     end
     return
   end
-  lbHeader:SetText("Clasificación de la liga")
-  local board = Rules.ComputeLeaderboard(s)
+  lbHeader:SetText("Puntuación general de la liga")
+  local board, details = Rules.ComputeLeagueScore(s)
   for i, row in ipairs(lbRows) do
     local entry = board[i]
     if entry then
@@ -320,8 +316,15 @@ local function RefreshLeaderboard()
       end
       row.value:SetText(entry.points .. " pt")
       SetRowOnline(row, entry.name)
-      row.tooltipText = "Cuenta: " .. entry.name
+      local tip = "Cuenta: " .. entry.name
         .. (Session.IsAccountOnline(entry.name) and "\nConectado" or "\nDesconectado")
+      local breakdown = details and details[entry.name]
+      if breakdown then
+        for _, line in ipairs(breakdown) do
+          tip = tip .. "\n" .. line
+        end
+      end
+      row.tooltipText = tip
     else
       row.rank:SetText("")
       row.name:SetText("")
@@ -443,64 +446,7 @@ RefreshLeague = function()
 end
 
 -- ---------------------------------------------------------------------------
--- Pestaña 3: Retos
--- ---------------------------------------------------------------------------
-
-local function CreateChallengesTab(parent)
-  local f = CreateFrame("Frame", nil, parent)
-  f:SetAllPoints()
-
-  for i = 1, Rules.MAX_ACTIVE_CHALLENGES do
-    local y = -8 - (i - 1) * 104
-    local block = {}
-
-    block.title = MakeText(f, "GameFontNormalLarge", 8, y, 380, 18)
-    MakeFill(f, 8, y - 19, 540, 1, 1, 0.82, 0, 0.25)
-
-    block.points = MakeText(f, "GameFontHighlight", 466, y, 82, 18, "RIGHT", GOLD)
-
-    block.desc = MakeText(f, "GameFontDisableSmall", 8, y - 24, 520, 14)
-
-    block.confirm = MakeButton(f, "Confirmar…", 100, 20)
-    block.confirm:SetPoint("TOPLEFT", 8, y - 44)
-
-    block.edit = MakeButton(f, "Editar", 80, 20)
-    block.edit:SetPoint("LEFT", block.confirm, "RIGHT", 8, 0)
-
-    challengeBlocks[i] = block
-  end
-  return f
-end
-
-local function RefreshChallenges()
-  local s = Session.Active()
-  local isOrganizer = Session.IsOrganizer()
-  for i, block in ipairs(challengeBlocks) do
-    local c = s and s.challenges[i] or nil
-    if c then
-      block.title:SetText(c.title)
-      block.points:SetText(c.points .. " pt")
-      block.desc:SetText(c.desc or "")
-      block.confirm:SetScript("OnClick", function()
-        UI.ShowParticipantPicker(c.id)
-      end)
-      block.edit:SetScript("OnClick", function()
-        UI.ShowEditChallenge(c)
-      end)
-      block.confirm:SetShown(isOrganizer)
-      block.edit:SetShown(isOrganizer)
-    else
-      block.title:SetText("")
-      block.points:SetText("")
-      block.desc:SetText((not s and i == 1) and "Sin sesión activa." or "")
-      block.confirm:Hide()
-      block.edit:Hide()
-    end
-  end
-end
-
--- ---------------------------------------------------------------------------
--- Pestaña 4: Historial (sesiones cerradas, locales)
+-- Pestaña 3: Historial (sesiones cerradas, locales)
 -- ---------------------------------------------------------------------------
 
 local historyRows = {}
@@ -691,151 +637,6 @@ local function RefreshSessionTab()
   sessionButtons.join:SetShown(s == nil)
   sessionButtons.export:SetShown(s ~= nil)
   sessionButtons.reset:SetShown(s ~= nil and Session.IsOrganizer())
-end
-
--- ---------------------------------------------------------------------------
--- Selector de participante (confirmar resultado)
--- ---------------------------------------------------------------------------
-
-local function CreatePicker()
-  local f = NewBackdropFrame("Frame", "LaTabernaPicker", main)
-  f:SetSize(260, 480)
-  f:SetPoint("CENTER")
-  f:SetFrameStrata("FULLSCREEN_DIALOG")
-  f:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 24,
-    insets = { left = 6, right = 6, top = 6, bottom = 6 },
-  })
-  f:EnableMouse(true)
-  f:Hide()
-
-  f.title = MakeLabel(f, "GameFontHighlight", 220)
-  f.title:SetPoint("TOPLEFT", 14, -12)
-
-  f.rows = {}
-  for i = 1, PICKER_ROWS do
-    local b = MakeButton(f, "", 220, 18)
-    b:SetPoint("TOPLEFT", 16, -36 - (i - 1) * 20)
-    f.rows[i] = b
-  end
-
-  f.cancel = MakeButton(f, "Cancelar", 100, 22)
-  f.cancel:SetPoint("BOTTOM", 0, 10)
-  f.cancel:SetScript("OnClick", function()
-    f:Hide()
-  end)
-
-  return f
-end
-
-function UI.ShowParticipantPicker(challengeId)
-  local s = Session.Active()
-  if not s then
-    return
-  end
-  local challenge = Rules.GetChallenge(s, challengeId)
-  picker.title:SetText("¿Quién completó «" .. (challenge and challenge.title or "?") .. "»?")
-  local entries = {}
-  for account in pairs(s.participants) do
-    entries[#entries + 1] = { account = account, display = Session.DisplayName(account) }
-  end
-  table.sort(entries, function(a, b)
-    return a.display < b.display
-  end)
-  for i, b in ipairs(picker.rows) do
-    local entry = entries[i]
-    if entry then
-      b:SetText(entry.display)
-      b:SetScript("OnClick", function()
-        Session.ConfirmResult(challengeId, entry.account)
-        picker:Hide()
-      end)
-      b:Show()
-    else
-      b:Hide()
-    end
-  end
-  picker:Show()
-end
-
--- ---------------------------------------------------------------------------
--- Diálogo de edición de reto
--- ---------------------------------------------------------------------------
-
-local function MakeEditBox(parent, width)
-  local eb = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-  eb:SetSize(width, 24)
-  eb:SetAutoFocus(false)
-  return eb
-end
-
-local function CreateEditDialog()
-  local f = NewBackdropFrame("Frame", "LaTabernaEditChallenge", main)
-  f:SetSize(360, 240)
-  f:SetPoint("CENTER")
-  f:SetFrameStrata("FULLSCREEN_DIALOG")
-  f:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 24,
-    insets = { left = 6, right = 6, top = 6, bottom = 6 },
-  })
-  f:EnableMouse(true)
-  f:Hide()
-
-  f.title = MakeLabel(f, "GameFontHighlight")
-  f.title:SetPoint("TOPLEFT", 16, -14)
-  f.title:SetText("Editar reto")
-
-  local l1 = MakeLabel(f, "GameFontNormal")
-  l1:SetPoint("TOPLEFT", 16, -40)
-  l1:SetText("Título")
-  f.ebTitle = MakeEditBox(f, 320)
-  f.ebTitle:SetPoint("TOPLEFT", 20, -58)
-
-  local l2 = MakeLabel(f, "GameFontNormal")
-  l2:SetPoint("TOPLEFT", 16, -92)
-  l2:SetText("Descripción")
-  f.ebDesc = MakeEditBox(f, 320)
-  f.ebDesc:SetPoint("TOPLEFT", 20, -110)
-
-  local l3 = MakeLabel(f, "GameFontNormal")
-  l3:SetPoint("TOPLEFT", 16, -144)
-  l3:SetText("Puntos")
-  f.ebPoints = MakeEditBox(f, 60)
-  f.ebPoints:SetPoint("TOPLEFT", 20, -162)
-  f.ebPoints:SetNumeric(true)
-
-  f.save = MakeButton(f, "Guardar", 100, 24)
-  f.save:SetPoint("BOTTOMLEFT", 60, 14)
-  f.cancel = MakeButton(f, "Cancelar", 100, 24)
-  f.cancel:SetPoint("BOTTOMRIGHT", -60, 14)
-  f.cancel:SetScript("OnClick", function()
-    f:Hide()
-  end)
-
-  return f
-end
-
-function UI.ShowEditChallenge(challenge)
-  editDialog.challengeId = challenge.id
-  editDialog.ebTitle:SetText(challenge.title or "")
-  editDialog.ebDesc:SetText(challenge.desc or "")
-  editDialog.ebPoints:SetText(tostring(challenge.points or 0))
-  editDialog.save:SetScript("OnClick", function()
-    local title = strtrim(editDialog.ebTitle:GetText() or "")
-    local desc = strtrim(editDialog.ebDesc:GetText() or "")
-    local points = tonumber(editDialog.ebPoints:GetText()) or 0
-    if title == "" or points <= 0 then
-      Session.Print("El reto necesita un título y puntos mayores que cero.")
-      return
-    end
-    Session.UpdateChallenge(editDialog.challengeId, title, desc, points)
-    editDialog:Hide()
-  end)
-  editDialog:Show()
 end
 
 -- ---------------------------------------------------------------------------
@@ -1144,9 +945,8 @@ local function CreateMainFrame()
 
   CreateLeaderboardTab(tabFrames[1])
   CreateLeagueTab(tabFrames[2])
-  CreateChallengesTab(tabFrames[3])
-  CreateHistoryTab(tabFrames[4])
-  CreateSessionTab(tabFrames[5])
+  CreateHistoryTab(tabFrames[3])
+  CreateSessionTab(tabFrames[4])
 
   -- Pestañas colgando del borde inferior, como las ventanas del juego.
   for index, name in ipairs(TAB_NAMES) do
@@ -1175,8 +975,6 @@ end
 
 function UI.Init()
   main = CreateMainFrame()
-  picker = CreatePicker()
-  editDialog = CreateEditDialog()
   textDialog = CreateTextDialog()
   minimapButton = CreateMinimapButton()
   UpdateMinimapButtonPosition()
@@ -1213,7 +1011,6 @@ function UI.Refresh()
   end
   RefreshLeaderboard()
   RefreshLeague()
-  RefreshChallenges()
   RefreshHistory()
   RefreshSessionTab()
 end

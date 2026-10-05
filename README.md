@@ -2,44 +2,35 @@
 
 Addon privado de **World of Warcraft: Forever** para un grupo de amigos.
 Añade una capa de juego propia por encima del WoW: una **liga por temporadas**
-con retos, puntos y clasificación, sincronizada entre todos los miembros de la
-hermandad que tengan el addon instalado.
-
-La idea: que no gane quien más horas juega, sino quien cumple los retos de las
-sesiones compartidas.
+con rankings automáticos (enemigos, duelos, oro, tiempo jugado…) y una
+puntuación general, sincronizada entre todos los miembros de la hermandad que
+tengan el addon instalado.
 
 ## Cómo funciona
 
 1. **Alguien crea la sesión** (`/taberna crear`) y se convierte en el
    **organizador**: la autoridad de la liga.
 2. El addon anuncia la sesión por el **canal de hermandad** (mensajes de addon,
-   invisibles en el chat). El resto recibe una invitación y se une con un clic.
+   invisibles en el chat). El resto recibe una invitación y se une con un clic
+   o con un código.
 3. La liga es **por cuenta, no por personaje**: cada participante se identifica
-   por su BattleTag, así que da igual con qué personaje entre — sus puntos son
+   por su BattleTag, así que da igual con qué personaje entre — sus números son
    siempre los mismos.
-4. La sesión tiene **3 retos activos** (título, descripción y puntos), que el
-   organizador puede editar en cualquier momento.
-5. Cuando alguien cumple un reto, **el organizador lo confirma** desde la
-   ventana del addon y los puntos se reparten al instante a todos los clientes.
-6. La **clasificación** se actualiza en todos los addons a la vez. Cada
-   resultado lleva un identificador único, así que no se puede puntuar dos
-   veces lo mismo.
-7. El estado se **guarda entre sesiones** y se sincroniza al reconectar: si
-   entras tarde, tu addon pide el estado completo al organizador.
+4. Cada addon **cuenta automáticamente** lo que hace su jugador (enemigos
+   derrotados, duelos, oro ganado, tiempo jugado, misiones, muertes, honor,
+   rares y profesiones) y lo comparte con el grupo.
+5. De todos esos rankings sale la **puntuación general de la liga** con un
+   sistema de puntos por posición (Borda): en cada ranking, el 1.º suma N
+   puntos, el 2.º N−1 y así hasta el último con valor mayor que cero (N =
+   participantes con valor en ese ranking). Los empates comparten puntos. Como
+   solo importa la posición, no se mezclan escalas (miles de oro contra unos
+   pocos duelos).
+6. La clasificación se actualiza en todos los addons a la vez, y el estado se
+   **guarda entre sesiones** y se sincroniza al reconectar: si entras tarde,
+   tu addon pide el estado completo al organizador.
 
-Si el organizador se desconecta, las confirmaciones quedan **en pausa** hasta
-que vuelva (no hay elección automática de líder: es un grupo de confianza).
-
-### Retos iniciales de ejemplo
-
-| Reto | Puntos |
-| :-- | --: |
-| Completar la mazmorra elegida por el grupo | 10 |
-| Ganar el rally previo a la sesión | 5 |
-| Completar y revelar un contrato secreto | 3 |
-
-Son solo la propuesta inicial: el organizador puede reescribirlos desde la
-propia ventana del addon.
+Si el organizador se desconecta, la sesión queda **en pausa** hasta que vuelva
+(no hay elección automática de líder: es un grupo de confianza).
 
 ## Instalación
 
@@ -68,23 +59,23 @@ sincronización usa el canal de addon `GUILD`.
 | `/taberna estado` | Versiones, APIs disponibles y estado de la sesión |
 | `/taberna depura` | Activa el diagnóstico de contadores |
 
-La ventana tiene cinco pestañas:
+La ventana tiene cuatro pestañas:
 
-- **Clasificación** — puntos de cada participante, con medallas de
-  oro/plata/bronce en el podio y un punto verde/gris de conexión.
+- **Clasificación** — la puntuación general de la liga (sistema Borda sobre
+  todos los rankings), con medallas de oro/plata/bronce en el podio, punto
+  verde/gris de conexión y un tooltip con el desglose: de dónde sale cada
+  punto.
 - **Liga** — rankings automáticos con menú lateral: **enemigos derrotados**,
   **duelos ganados y perdidos**, **rares**, **oro ganado**, **tiempo jugado**,
-  **misiones**, **muertes** y **muertes con honor**. Cada addon cuenta los
-  suyos y los comparte con el grupo.
-- **Retos** — los 3 retos activos; el organizador ve además los botones
-  *Confirmar…* (elegir quién lo completó) y *Editar*.
+  **misiones**, **muertes**, **muertes con honor** y **profesiones**. Cada
+  addon cuenta los suyos y los comparte con el grupo.
 - **Historial** — las sesiones cerradas, más recientes primero.
 - **Sesión** — estado en dos columnas, invitaciones, respaldo y zona
   peligrosa (borrado con doble confirmación).
 
 Además: icono de minimapa arrastrable con estado de la sesión en el tooltip,
-sonidos al confirmar resultados, recibir invitaciones o perder el liderato de
-un ranking, y anuncio en el chat cuando alguien toma el liderato.
+sonidos al recibir invitaciones o perder el liderato de un ranking, y anuncio
+en el chat cuando alguien toma el liderato.
 
 ### Código de invitación
 
@@ -102,7 +93,7 @@ Nada se borra solo: los resultados, las estadísticas y el historial se
 conservan siempre. Solo hay dos acciones destructivas, ambas con **doble
 confirmación** (hay que pulsar el botón dos veces):
 
-- **Reiniciar liga** — solo el líder; pone a cero puntos y estadísticas para
+- **Reiniciar liga** — solo el líder; pone a cero las estadísticas para
   todos los participantes.
 - **Borrar historial** — limpia tu archivo local de sesiones cerradas.
 
@@ -137,8 +128,8 @@ pruebas en el cliente) está en [`LaTaberna/README.md`](LaTaberna/README.md).
     muerte); no existe estadística nativa de rares.
 - Los comandos `/taberna stat <id>` y `/taberna scanstats <a> <b>` son
   herramientas de diagnóstico sobre el panel de estadísticas del juego.
-- La clasificación muestra 15 filas y el selector de participantes 20; para
-  grupos mayores habrá que añadir scroll.
+- La clasificación muestra 15 filas y cada ranking de la liga 14; para grupos
+  mayores habrá que añadir scroll.
 - Es un diseño para un **grupo de confianza**, no un sistema antitrampas.
 
 ## Roadmap
