@@ -594,9 +594,11 @@ local function CreateSessionTab(parent)
   end
 
   -- Versión, pegada al borde inferior derecho y discreta
+  -- Versión: sale del área de contenido y se pega al borde inferior real de
+  -- la ventana, por encima de la fila de pestañas, lo más discreta posible.
   local versionLine = MakeText(f, "GameFontDisableSmall", 0, 0, 296, 12, "RIGHT")
   versionLine:ClearAllPoints()
-  versionLine:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 2)
+  versionLine:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, -13)
   sessionLines[8] = versionLine
 
   return f
