@@ -150,7 +150,7 @@ local function MakeRankRow(parent, x, y, width, index)
       return
     end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(self.tooltipText, 1, 1, 1, true)
+    GameTooltip:SetText(self.tooltipText)
     GameTooltip:Show()
   end)
   r:SetScript("OnLeave", HideRowTooltip)
