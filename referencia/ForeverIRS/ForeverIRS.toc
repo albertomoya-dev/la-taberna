@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: Forever IRS
+## Notes: A private gold-statistics ledger for yourself and players you inspect.
+## Author: Forever IRS contributors
+## Version: 0.5.2
+## SavedVariables: ForeverIRSDB
+## IconTexture: Interface\AddOns\ForeverIRS\Assets\Icon.tga
+## X-License: MIT
+
+Statistics.lua
+Assessment.lua
+Storage.lua
+Core.lua
+UI.lua
