@@ -11,7 +11,7 @@ local Stats = LaTaberna.Stats
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.5.0"
+local ADDON_VERSION = "0.6.0"
 local W, H = 620, 440   -- tamaño base, antes de la escala
 local DEFAULT_SCALE = 1.0
 local MAX_ROWS = 15     -- filas visibles de la clasificación
@@ -155,7 +155,15 @@ local function MakeRankRow(parent, x, y, width, index)
       return
     end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(self.tooltipText)
+    local first = true
+    for lineText in tostring(self.tooltipText):gmatch("[^\n]+") do
+      if first then
+        GameTooltip:SetText(lineText)
+        first = false
+      else
+        GameTooltip:AddLine(lineText, 1, 1, 1)
+      end
+    end
     GameTooltip:Show()
   end)
   r:SetScript("OnLeave", HideRowTooltip)
@@ -411,7 +419,19 @@ RefreshLeague = function()
       end
       row.value:SetText(FormatStatValue(leagueKind, entry.value))
       SetRowOnline(row, entry.name)
-      row.tooltipText = "Cuenta: " .. entry.name .. "\nLo reporta su propio cliente."
+      local tip = "Cuenta: " .. entry.name .. "\nLo reporta su propio cliente."
+      if leagueKind == "craft" then
+        local profs = Session.ProfessionsOf(entry.name)
+        if profs and #profs > 0 then
+          tip = tip .. "\n"
+          for _, p in ipairs(profs) do
+            tip = tip .. "\n" .. p.name .. " " .. p.rank .. "/" .. p.max
+          end
+        else
+          tip = tip .. "\nSin datos de profesiones."
+        end
+      end
+      row.tooltipText = tip
     else
       row.rank:SetText("")
       row.name:SetText("")

@@ -107,6 +107,23 @@ local function SanitizeSession()
   if type(s.stats) ~= "table" then
     s.stats = {}
   end
+  if type(s.profs) ~= "table" then
+    s.profs = {}
+  end
+  for account, list in pairs(s.profs) do
+    if type(account) ~= "string" or type(list) ~= "table" then
+      s.profs[account] = nil
+    else
+      for i, p in ipairs(list) do
+        if type(p) ~= "table" or type(p.name) ~= "string"
+          or type(p.rank) ~= "number" or p.rank < 0 then
+          list[i] = { name = "?", rank = 0, max = 0 }
+        elseif type(p.max) ~= "number" then
+          p.max = 0
+        end
+      end
+    end
+  end
   if type(s.seenEvents) ~= "table" then
     s.seenEvents = {}
   end
@@ -270,6 +287,9 @@ function Storage.ImportSession(str)
   end
   if type(s.seenEvents) ~= "table" then
     s.seenEvents = {}
+  end
+  if type(s.profs) ~= "table" then
+    s.profs = {}
   end
   for _, r in ipairs(s.results) do
     if r.eid then

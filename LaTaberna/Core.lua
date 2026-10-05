@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.5.0"
+Core.VERSION = "0.6.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -47,6 +47,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     LaTaberna.UI.Init()
     LaTaberna.Stats.Init()
     LaTaberna.Played.Init()
+    LaTaberna.Professions.Init()
     if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
       C_GuildInfo.GuildRoster()
     end

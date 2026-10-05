@@ -163,7 +163,8 @@ local function NewSessionState(id, organizer)
     participants = {},
     challenges = {},
     results = {},
-    stats = {},      -- contadores por cuenta: kills, duels, rares
+    stats = {},      -- contadores por cuenta: kills, duels, rares…
+    profs = {},      -- profesiones por cuenta: { {name, rank, max}… }
     seenEvents = {},
   }
 end
@@ -191,6 +192,9 @@ function Session.Create()
   if LaTaberna.Played then
     LaTaberna.Played.ReportToSession()
   end
+  if LaTaberna.Professions then
+    LaTaberna.Professions.Broadcast()
+  end
   Refresh()
 end
 
@@ -211,6 +215,9 @@ function Session.AcceptJoin(sid)
   ApplySavedAlias()
   if LaTaberna.Played then
     LaTaberna.Played.ReportToSession()
+  end
+  if LaTaberna.Professions then
+    LaTaberna.Professions.Broadcast()
   end
   Refresh()
 end
@@ -389,6 +396,36 @@ function Session.ReportStat(account, kind, value)
   Refresh()
 end
 
+-- Profesiones de una cuenta: { {name, rank, max}… } o nil.
+function Session.ProfessionsOf(account)
+  local s = Session.Active()
+  return s and type(s.profs) == "table" and s.profs[account] or nil
+end
+
+-- Aplica la lista de profesiones reportada por un participante.
+function Session.ApplyProfs(account, list)
+  local s = Session.Active()
+  if not s or not s.participants[account] or type(list) ~= "table" then
+    return
+  end
+  if type(s.profs) ~= "table" then
+    s.profs = {}
+  end
+  local clean = {}
+  for _, p in ipairs(list) do
+    if type(p) == "table" and type(p.name) == "string" and p.name ~= ""
+      and type(p.rank) == "number" and p.rank > 0 then
+      clean[#clean + 1] = {
+        name = p.name,
+        rank = p.rank,
+        max = type(p.max) == "number" and p.max or 0,
+      }
+    end
+  end
+  s.profs[account] = clean
+  Refresh()
+end
+
 -- Reinicia puntos y estadísticas para todos (solo organizador).
 function Session.ResetLeague()
   local s = Session.Active()
@@ -423,6 +460,7 @@ function Session.BuildSnapshot()
     challenges = s.challenges,
     results = s.results,
     stats = s.stats,
+    profs = s.profs,
   }
 end
 
@@ -440,6 +478,7 @@ function Session.ApplySnapshot(sid, sender, data)
   s.challenges = type(snap.challenges) == "table" and snap.challenges or {}
   s.results = type(snap.results) == "table" and snap.results or {}
   s.stats = type(snap.stats) == "table" and snap.stats or {}
+  s.profs = type(snap.profs) == "table" and snap.profs or {}
   for account, p in pairs(s.participants) do
     if type(p.alts) == "table" then
       for char in pairs(p.alts) do
@@ -565,6 +604,10 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
   elseif op == "STAT" then
     if s and s.id == sid then
       Session.ReportStat(senderAccount, f[2], tonumber(f[3]) or 0)
+    end
+  elseif op == "PROF" then
+    if s and s.id == sid then
+      Session.ApplyProfs(senderAccount, LaTaberna.Professions.Unpack(f[2]))
     end
   elseif op == "ALIAS" then
     if s and s.id == sid and s.participants[senderAccount] then

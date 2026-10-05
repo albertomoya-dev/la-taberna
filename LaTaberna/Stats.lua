@@ -14,7 +14,7 @@ local Session = LaTaberna.Session
 local Stats = {}
 LaTaberna.Stats = Stats
 
-Stats.KINDS = { "kills", "duels", "duelsLost", "rares", "gold", "played", "quests", "deaths", "hk" }
+Stats.KINDS = { "kills", "duels", "duelsLost", "rares", "gold", "played", "quests", "deaths", "hk", "craft" }
 Stats.LABELS = {
   kills = "Enemigos derrotados",
   duels = "Duelos ganados",
@@ -25,6 +25,7 @@ Stats.LABELS = {
   quests = "Misiones completadas",
   deaths = "Muertes totales",
   hk = "Muertes con honor",
+  craft = "Profesiones (suma de niveles)",
 }
 Stats.SHORT_LABELS = {
   kills = "Enemigos",
@@ -36,6 +37,7 @@ Stats.SHORT_LABELS = {
   quests = "Misiones",
   deaths = "Muertes",
   hk = "Honor",
+  craft = "Profes.",
 }
 
 -- IDs de Achievement.db2 (build 1.60.1.70124) para los contadores nativos.

@@ -19,6 +19,7 @@ local PRIORITY = {
   JOIN = 2, LEAVE = 2, SREQ = 2, ALIAS = 2,
   HELLO = 3, DISC = 3,
   STAT = 4,
+  PROF = 4,
   SNAP = 5,
 }
 
