@@ -1,4 +1,7 @@
--- UI.lua: ventana principal con pestañas (Lua puro, sin XML).
+-- UI.lua: ventana principal con pestañas inferiores (Lua puro, sin XML).
+-- Construida con las plantillas nativas del cliente (ButtonFrameTemplate,
+-- PanelTabButtonTemplate, UIPanelButtonTemplate), como hace Forever IRS,
+-- para que la ventana parezca parte del juego.
 LaTaberna = LaTaberna or {}
 
 local Rules = LaTaberna.Rules
@@ -8,10 +11,12 @@ local Stats = LaTaberna.Stats
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.3.1"
-local MAX_ROWS = 21       -- filas visibles de la clasificación
-local LEAGUE_ROWS = 18    -- filas visibles por ranking de la liga
-local PICKER_ROWS = 20    -- participantes seleccionables a la vez
+local ADDON_VERSION = "0.4.0"
+local W, H = 620, 440   -- tamaño base, antes de la escala
+local DEFAULT_SCALE = 1.0
+local MAX_ROWS = 15     -- filas visibles de la clasificación
+local LEAGUE_ROWS = 14  -- filas visibles por ranking de la liga
+local PICKER_ROWS = 20  -- participantes seleccionables a la vez
 
 local main
 local tabButtons = {}
@@ -33,6 +38,10 @@ local editDialog
 local textDialog
 
 local TAB_NAMES = { "Clasificación", "Liga", "Retos", "Sesión" }
+
+-- Colores
+local GOLD = { 1, 0.82, 0 }
+local WHITE = { 1, 1, 1 }
 
 -- En clientes Classic los frames tienen SetBackdrop nativo; en Retail hay que
 -- aplicar BackdropTemplateMixin a mano (el template virtual puede no existir).
@@ -94,6 +103,135 @@ local function MakeLabel(parent, template, width)
   return fs
 end
 
+local function MakeText(parent, font, x, y, width, height, justify, color)
+  local fs = parent:CreateFontString(nil, "OVERLAY", font)
+  fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  fs:SetSize(width, height)
+  fs:SetJustifyH(justify or "LEFT")
+  fs:SetJustifyV("MIDDLE")
+  fs:SetWordWrap(false)
+  if color then
+    fs:SetTextColor(unpack(color))
+  end
+  return fs
+end
+
+-- Relleno de color plano (franjas de filas, separadores).
+local function MakeFill(parent, x, y, width, height, r, g, b, a)
+  local t = parent:CreateTexture(nil, "BORDER")
+  t:SetColorTexture(r, g, b, a)
+  t:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  t:SetSize(width, height)
+  return t
+end
+
+local function HideRowTooltip(self)
+  if GameTooltip and GameTooltip:GetOwner() == self then
+    GameTooltip:Hide()
+  end
+end
+
+-- Fila rayada de ranking: posición, nombre y valor alineado a la derecha.
+-- Si se asigna row.tooltipText, al pasar el ratón se muestra como tooltip.
+local function MakeRankRow(parent, x, y, width, index)
+  local r = CreateFrame("Button", nil, parent)
+  r:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+  r:SetSize(width, 17)
+  if index % 2 == 1 then
+    MakeFill(r, 0, 0, width, 17, 1, 1, 1, 0.05)
+  end
+  r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+  r.rank = MakeText(r, "GameFontDisableSmall", 4, 0, 26, 17)
+  r.name = MakeText(r, "GameFontHighlightSmall", 34, 0, width - 190, 17)
+  r.value = MakeText(r, "GameFontHighlightSmall", width - 154, 0, 150, 17, "RIGHT")
+  r:EnableMouse(true)
+  r:SetScript("OnEnter", function(self)
+    if not self.tooltipText or not GameTooltip then
+      return
+    end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(self.tooltipText, 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  r:SetScript("OnLeave", HideRowTooltip)
+  return r
+end
+
+-- Oro con los iconos de moneda del juego; en modo daltónico, letras o/p/c.
+-- Las denominaciones vacías se omiten (90 cobre se lee "90c", no "0o 0p 90c").
+local function FormatMoney(copper)
+  copper = math.floor(copper or 0)
+  local letters = type(GetCVarBool) == "function" and GetCVarBool("colorblindMode")
+  local units = {
+    { 10000, "o", "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t" },
+    { 100, "p", "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t" },
+    { 1, "c", "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" },
+  }
+  local parts = {}
+  for index, unit in ipairs(units) do
+    local amount = math.floor(copper / unit[1])
+    if index > 1 then
+      amount = amount % 100
+    end
+    if amount > 0 or (index == 3 and #parts == 0) then
+      local shown
+      if index == 1 then
+        -- miles con separador
+        shown = string.format("%.0f", amount):reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
+      else
+        shown = tostring(amount)
+      end
+      parts[#parts + 1] = shown .. (letters and unit[2] or unit[3])
+    end
+  end
+  return table.concat(parts, " ")
+end
+UI.FormatMoney = FormatMoney
+
+-- Formatea el valor de un ranking; el oro se guarda en cobre.
+local function FormatStatValue(kind, value)
+  if kind == "gold" then
+    return FormatMoney(value)
+  end
+  return tostring(value)
+end
+
+-- ---------------------------------------------------------------------------
+-- Escala y posición de la ventana
+-- ---------------------------------------------------------------------------
+
+local function ValidScale(n)
+  return type(n) == "number" and n >= 0.6 and n <= 1.6
+end
+
+function UI.FitWindow()
+  if not main then
+    return
+  end
+  local scale = LaTabernaDB and LaTabernaDB.settings and LaTabernaDB.settings.scale
+  if not ValidScale(scale) then
+    scale = DEFAULT_SCALE
+  end
+  main:SetScale(math.min(scale,
+    (UIParent:GetWidth() - 24) / W,
+    (UIParent:GetHeight() - 60) / H))
+end
+
+function UI.SetScale(value)
+  if value == nil then
+    LaTabernaDB.settings.scale = nil
+  elseif ValidScale(value) then
+    LaTabernaDB.settings.scale = value
+  else
+    Session.Print("Elige una escala entre 0.6 y 1.6, o /taberna escala reset.")
+    return
+  end
+  UI.FitWindow()
+  Session.Print("Escala de ventana: "
+    .. string.format("%.2f", LaTabernaDB.settings.scale or DEFAULT_SCALE)
+    .. (LaTabernaDB.settings.scale and "" or " (por defecto)"))
+end
+
 -- ---------------------------------------------------------------------------
 -- Pestaña 1: Clasificación
 -- ---------------------------------------------------------------------------
@@ -102,33 +240,24 @@ local function CreateLeaderboardTab(parent)
   local f = CreateFrame("Frame", nil, parent)
   f:SetAllPoints()
 
-  lbHeader = MakeLabel(f, "GameFontHighlight")
-  lbHeader:SetPoint("TOPLEFT", 8, -8)
+  lbHeader = MakeText(f, "GameFontNormal", 4, -8, 440, 16)
 
   for i = 1, MAX_ROWS do
-    local y = -30 - (i - 1) * 16
-    local rank = MakeLabel(f, "GameFontDisableSmall")
-    rank:SetPoint("TOPLEFT", 8, y)
-    rank:SetWidth(28)
-    local name = MakeLabel(f, "GameFontNormal")
-    name:SetPoint("TOPLEFT", 40, y)
-    name:SetWidth(300)
-    local points = MakeLabel(f, "GameFontHighlight")
-    points:SetPoint("TOPLEFT", 348, y)
-    points:SetWidth(100)
-    lbRows[i] = { rank = rank, name = name, points = points }
+    lbRows[i] = MakeRankRow(f, 4, -30 - (i - 1) * 17, 560, i)
   end
   return f
 end
 
 local function RefreshLeaderboard()
   local s = Session.Active()
+  local me = Session.PlayerAccount()
   if not s then
     lbHeader:SetText("Sin sesión activa. Crea una o espera una invitación.")
     for _, row in ipairs(lbRows) do
       row.rank:SetText("")
       row.name:SetText("")
-      row.points:SetText("")
+      row.value:SetText("")
+      row.tooltipText = nil
     end
     return
   end
@@ -139,17 +268,24 @@ local function RefreshLeaderboard()
     if entry then
       row.rank:SetText(i .. ".")
       row.name:SetText(Session.DisplayName(entry.name))
-      row.points:SetText(entry.points .. " pt")
+      if entry.name == me then
+        row.name:SetTextColor(unpack(GOLD))
+      else
+        row.name:SetTextColor(unpack(WHITE))
+      end
+      row.value:SetText(entry.points .. " pt")
+      row.tooltipText = "Cuenta: " .. entry.name
     else
       row.rank:SetText("")
       row.name:SetText("")
-      row.points:SetText("")
+      row.value:SetText("")
+      row.tooltipText = nil
     end
   end
 end
 
 -- ---------------------------------------------------------------------------
--- Pestaña 2: Liga (rankings de enemigos, duelos y rares)
+-- Pestaña 2: Liga (rankings de enemigos, duelos, rares y oro)
 -- ---------------------------------------------------------------------------
 
 local RefreshLeague
@@ -163,6 +299,9 @@ local function SelectLeagueKind(index)
       b:Enable()
     end
   end
+  if PlaySound and SOUNDKIT then
+    PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+  end
   RefreshLeague()
 end
 
@@ -172,46 +311,19 @@ local function CreateLeagueTab(parent)
 
   for i, kind in ipairs(Stats.KINDS) do
     local b = MakeButton(f, Stats.SHORT_LABELS[kind], 112, 20)
-    b:SetPoint("TOPLEFT", 8 + (i - 1) * 116, -6)
+    b:SetPoint("TOPLEFT", 4 + (i - 1) * 116, -4)
     leagueSubButtons[i] = b
     b:SetScript("OnClick", function()
       SelectLeagueKind(i)
     end)
   end
 
-  leagueHeader = MakeLabel(f, "GameFontHighlight")
-  leagueHeader:SetPoint("TOPLEFT", 8, -34)
+  leagueHeader = MakeText(f, "GameFontNormal", 4, -32, 440, 16)
 
   for i = 1, LEAGUE_ROWS do
-    local y = -56 - (i - 1) * 17
-    local rank = MakeLabel(f, "GameFontDisableSmall")
-    rank:SetPoint("TOPLEFT", 8, y)
-    rank:SetWidth(28)
-    local name = MakeLabel(f, "GameFontNormal")
-    name:SetPoint("TOPLEFT", 40, y)
-    name:SetWidth(300)
-    local value = MakeLabel(f, "GameFontHighlight")
-    value:SetPoint("TOPLEFT", 348, y)
-    value:SetWidth(100)
-    leagueRows[i] = { rank = rank, name = name, value = value }
+    leagueRows[i] = MakeRankRow(f, 4, -54 - (i - 1) * 17, 560, i)
   end
   return f
-end
-
--- Formatea el valor de un ranking; el oro se guarda en cobre.
-local function FormatStatValue(kind, value)
-  if kind == "gold" then
-    local gold = math.floor(value / 10000)
-    local silver = math.floor((value % 10000) / 100)
-    local copper = value % 100
-    if gold > 0 then
-      return string.format("%do %dp %dc", gold, silver, copper)
-    elseif silver > 0 then
-      return string.format("%dp %dc", silver, copper)
-    end
-    return string.format("%dc", copper)
-  end
-  return tostring(value)
 end
 
 RefreshLeague = function()
@@ -219,6 +331,7 @@ RefreshLeague = function()
     return
   end
   local s = Session.Active()
+  local me = Session.PlayerAccount()
   local label = Stats.LABELS[leagueKind] or ""
   if not s then
     leagueHeader:SetText(label .. " — sin sesión activa")
@@ -226,6 +339,7 @@ RefreshLeague = function()
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.tooltipText = nil
     end
     return
   end
@@ -236,11 +350,18 @@ RefreshLeague = function()
     if entry then
       row.rank:SetText(i .. ".")
       row.name:SetText(Session.DisplayName(entry.name))
+      if entry.name == me then
+        row.name:SetTextColor(unpack(GOLD))
+      else
+        row.name:SetTextColor(unpack(WHITE))
+      end
       row.value:SetText(FormatStatValue(leagueKind, entry.value))
+      row.tooltipText = "Cuenta: " .. entry.name .. "\nLo reporta su propio cliente."
     else
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.tooltipText = nil
     end
   end
 end
@@ -254,20 +375,18 @@ local function CreateChallengesTab(parent)
   f:SetAllPoints()
 
   for i = 1, Rules.MAX_ACTIVE_CHALLENGES do
-    local y = -10 - (i - 1) * 110
+    local y = -8 - (i - 1) * 104
     local block = {}
 
-    block.title = MakeLabel(f, "GameFontNormalLarge", 300)
-    block.title:SetPoint("TOPLEFT", 8, y)
+    block.title = MakeText(f, "GameFontNormalLarge", 8, y, 380, 18)
+    MakeFill(f, 8, y - 19, 540, 1, 1, 0.82, 0, 0.25)
 
-    block.points = MakeLabel(f, "GameFontHighlight")
-    block.points:SetPoint("TOPRIGHT", -12, y)
+    block.points = MakeText(f, "GameFontHighlight", 466, y, 82, 18, "RIGHT", GOLD)
 
-    block.desc = MakeLabel(f, "GameFontDisableSmall", 330)
-    block.desc:SetPoint("TOPLEFT", block.title, "BOTTOMLEFT", 0, -4)
+    block.desc = MakeText(f, "GameFontDisableSmall", 8, y - 24, 520, 14)
 
     block.confirm = MakeButton(f, "Confirmar…", 100, 20)
-    block.confirm:SetPoint("TOPLEFT", block.desc, "BOTTOMLEFT", 0, -8)
+    block.confirm:SetPoint("TOPLEFT", 8, y - 44)
 
     block.edit = MakeButton(f, "Editar", 80, 20)
     block.edit:SetPoint("LEFT", block.confirm, "RIGHT", 8, 0)
@@ -313,19 +432,19 @@ local function CreateSessionTab(parent)
   f:SetAllPoints()
 
   for i = 1, 8 do
-    local line = MakeLabel(f, i == 1 and "GameFontHighlight" or "GameFontNormal", 440)
-    line:SetPoint("TOPLEFT", 8, -10 - (i - 1) * 22)
+    local line = MakeText(f, i == 1 and "GameFontHighlight" or "GameFontNormal",
+      8, -8 - (i - 1) * 21, 560, 16)
     sessionLines[i] = line
   end
 
   -- Fila 1: ciclo de vida de la sesión
-  sessionButtons.create = MakeButton(f, "Crear sesión", 120, 24)
-  sessionButtons.create:SetPoint("TOPLEFT", 8, -180)
+  sessionButtons.create = MakeButton(f, "Crear sesión", 120, 22)
+  sessionButtons.create:SetPoint("TOPLEFT", 8, -186)
   sessionButtons.create:SetScript("OnClick", function()
     Session.Create()
   end)
 
-  sessionButtons.leave = MakeButton(f, "Salir", 80, 24)
+  sessionButtons.leave = MakeButton(f, "Salir", 80, 22)
   sessionButtons.leave:SetPoint("LEFT", sessionButtons.create, "RIGHT", 8, 0)
   sessionButtons.leave:SetScript("OnClick", function()
     Session.Leave()
@@ -338,32 +457,32 @@ local function CreateSessionTab(parent)
   end
 
   -- Fila 2: invitaciones
-  sessionButtons.invite = MakeButton(f, "Código de invitación", 150, 24)
-  sessionButtons.invite:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -10)
+  sessionButtons.invite = MakeButton(f, "Código de invitación", 150, 22)
+  sessionButtons.invite:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -8)
   sessionButtons.invite:SetScript("OnClick", function()
     UI.ShowInvite()
   end)
 
-  sessionButtons.join = MakeButton(f, "Unirse con código…", 150, 24)
+  sessionButtons.join = MakeButton(f, "Unirse con código…", 150, 22)
   sessionButtons.join:SetPoint("LEFT", sessionButtons.invite, "RIGHT", 8, 0)
   sessionButtons.join:SetScript("OnClick", function()
     UI.ShowJoin()
   end)
 
   -- Fila 3: respaldo
-  sessionButtons.export = MakeButton(f, "Exportar", 90, 24)
-  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.invite, "BOTTOMLEFT", 0, -10)
+  sessionButtons.export = MakeButton(f, "Exportar", 90, 22)
+  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.invite, "BOTTOMLEFT", 0, -8)
   sessionButtons.export:SetScript("OnClick", function()
     UI.ShowExport()
   end)
 
-  sessionButtons.import = MakeButton(f, "Importar", 90, 24)
+  sessionButtons.import = MakeButton(f, "Importar", 90, 22)
   sessionButtons.import:SetPoint("LEFT", sessionButtons.export, "RIGHT", 8, 0)
   sessionButtons.import:SetScript("OnClick", function()
     UI.ShowImport()
   end)
 
-  sessionButtons.alias = MakeButton(f, "Alias…", 80, 24)
+  sessionButtons.alias = MakeButton(f, "Alias…", 80, 22)
   sessionButtons.alias:SetPoint("LEFT", sessionButtons.import, "RIGHT", 8, 0)
   sessionButtons.alias:SetScript("OnClick", function()
     UI.ShowAlias()
@@ -371,7 +490,7 @@ local function CreateSessionTab(parent)
 
   -- Fila 4: borrado (doble confirmación)
   sessionButtons.reset = MakeDangerButton(f, "Reiniciar liga", 190)
-  sessionButtons.reset:SetPoint("TOPLEFT", sessionButtons.export, "BOTTOMLEFT", 0, -14)
+  sessionButtons.reset:SetPoint("TOPLEFT", sessionButtons.export, "BOTTOMLEFT", 0, -12)
   sessionButtons.reset.onConfirm = function()
     Session.ResetLeague()
   end
@@ -791,58 +910,77 @@ end
 
 local function SelectTab(index)
   currentTab = index
-  for i, b in ipairs(tabButtons) do
-    if i == index then
-      b:Disable()
-    else
-      b:Enable()
-    end
+  if PlaySound and SOUNDKIT then
+    PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
   end
+  PanelTemplates_SetTab(main, index)
   for i, f in ipairs(tabFrames) do
     f:SetShown(i == index)
   end
 end
 
+local VALID_ANCHORS = {
+  CENTER = true, TOP = true, BOTTOM = true, LEFT = true, RIGHT = true,
+  TOPLEFT = true, TOPRIGHT = true, BOTTOMLEFT = true, BOTTOMRIGHT = true,
+}
+
+local function SaveWindowPosition()
+  local point, _, relative, x, y = main:GetPoint()
+  LaTabernaDB.settings.position = { point = point, relative = relative, x = x, y = y }
+end
+
+local function RestoreWindowPosition()
+  main:ClearAllPoints()
+  local pos = LaTabernaDB and LaTabernaDB.settings and LaTabernaDB.settings.position
+  if type(pos) == "table" and VALID_ANCHORS[pos.point] and VALID_ANCHORS[pos.relative]
+    and type(pos.x) == "number" and type(pos.y) == "number"
+    and pos.x == pos.x and pos.y == pos.y
+    and math.abs(pos.x) <= 10000 and math.abs(pos.y) <= 10000 then
+    local ok = pcall(main.SetPoint, main, pos.point, UIParent, pos.relative, pos.x, pos.y)
+    if ok then
+      return
+    end
+  end
+  main:SetPoint("CENTER")
+end
+
 local function CreateMainFrame()
-  local f = NewBackdropFrame("Frame", "LaTabernaFrame", UIParent)
-  f:SetSize(520, 460)
-  f:SetPoint("CENTER")
+  local f = CreateFrame("Frame", "LaTabernaFrame", UIParent, "ButtonFrameTemplate")
+  f:SetSize(W, H)
+  f:SetFrameStrata("DIALOG")
+  f:SetToplevel(true)
+  f:SetClampedToScreen(true)
+  f:SetTitle("La Taberna")
+  -- Retrato: la jarra del icono del addon; si no se puede, sin retrato.
+  local okPortrait = pcall(f.SetPortraitToAsset, f, MINIMAP_ICON)
+  if not okPortrait then
+    pcall(ButtonFrameTemplate_HidePortrait, f)
+  end
+  if f.CloseButton then
+    f.CloseButton:SetScript("OnClick", function()
+      f:Hide()
+    end)
+  end
   f:SetMovable(true)
   f:EnableMouse(true)
   f:RegisterForDrag("LeftButton")
   f:SetScript("OnDragStart", f.StartMoving)
-  f:SetScript("OnDragStop", f.StopMovingOrSizing)
-  f:SetFrameStrata("DIALOG")
-  f:SetClampedToScreen(true)
-  f:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 8, right = 8, top = 8, bottom = 8 },
-  })
+  f:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    SaveWindowPosition()
+  end)
   tinsert(UISpecialFrames, "LaTabernaFrame")
   f:Hide()
 
-  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -16)
-  title:SetText("La Taberna")
+  -- Pie con el aviso de precisión de los datos.
+  local footer = MakeText(f, "GameFontDisableSmall", 14, -(H - 30), W - 28, 12)
+  footer:SetText("Los contadores los reporta el juego o el cliente de cada participante; un valor ausente no es un cero.")
 
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -6, -6)
-
-  for i, name in ipairs(TAB_NAMES) do
-    local b = MakeButton(f, name, 110, 22)
-    b:SetPoint("TOPLEFT", 16 + (i - 1) * 116, -40)
-    tabButtons[i] = b
-    b:SetScript("OnClick", function()
-      SelectTab(i)
-    end)
-  end
-
+  -- Contenido de las pestañas, dentro del marco.
   for i = 1, #TAB_NAMES do
     local content = CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", 16, -70)
-    content:SetPoint("BOTTOMRIGHT", -16, 16)
+    content:SetPoint("TOPLEFT", 16, -66)
+    content:SetPoint("BOTTOMRIGHT", -16, 42)
     tabFrames[i] = content
   end
 
@@ -850,6 +988,24 @@ local function CreateMainFrame()
   CreateLeagueTab(tabFrames[2])
   CreateChallengesTab(tabFrames[3])
   CreateSessionTab(tabFrames[4])
+
+  -- Pestañas colgando del borde inferior, como las ventanas del juego.
+  for index, name in ipairs(TAB_NAMES) do
+    local tab = CreateFrame("Button", "LaTabernaFrameTab" .. index, f, "PanelTabButtonTemplate")
+    tab:SetID(index)
+    tab:SetText(name)
+    tab:SetScript("OnClick", function()
+      SelectTab(index)
+    end)
+    if index == 1 then
+      tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, 2)
+    else
+      tab:SetPoint("TOPLEFT", tabButtons[index - 1], "TOPRIGHT", 3, 0)
+    end
+    PanelTemplates_TabResize(tab, 0)
+    tabButtons[index] = tab
+  end
+  PanelTemplates_SetNumTabs(f, #TAB_NAMES)
 
   return f
 end
@@ -865,9 +1021,18 @@ function UI.Init()
   textDialog = CreateTextDialog()
   minimapButton = CreateMinimapButton()
   UpdateMinimapButtonPosition()
+  UI.FitWindow()
   SelectTab(1)
   SelectLeagueKind(1)
   UI.Refresh()
+
+  -- Reajustar la escala si cambia la resolución o la escala de la interfaz.
+  local f = CreateFrame("Frame")
+  f:RegisterEvent("UI_SCALE_CHANGED")
+  f:RegisterEvent("DISPLAY_SIZE_CHANGED")
+  f:SetScript("OnEvent", function()
+    UI.FitWindow()
+  end)
 end
 
 function UI.Toggle()
@@ -877,6 +1042,7 @@ function UI.Toggle()
   if main:IsShown() then
     main:Hide()
   else
+    RestoreWindowPosition()
     UI.Refresh()
     main:Show()
   end

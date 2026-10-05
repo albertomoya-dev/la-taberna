@@ -1,6 +1,12 @@
 -- Stats.lua: contadores de la liga (enemigos, duelos, rares) y su difusión.
 -- Los contadores son por cuenta y viven dentro de la sesión; cada cliente
 -- cuenta los suyos y los comparte con el resto (grupo de confianza).
+--
+-- Enemigos y duelos se cuentan por DELTAS de las estadísticas nativas del
+-- juego (GetStatistic), no parseando chat: es inmune a traducciones y no se
+-- pierde nada. IDs verificados contra Achievement.db2 del build 1.60.1.70124.
+-- El oro sigue por PLAYER_MONEY y los rares por eventos de unidad: el juego
+-- no tiene estadística propia para ellos.
 LaTaberna = LaTaberna or {}
 
 local Session = LaTaberna.Session
@@ -21,6 +27,16 @@ Stats.SHORT_LABELS = {
   rares = "Rares",
   gold = "Oro",
 }
+
+-- IDs de Achievement.db2 (build 1.60.1.70124) para los contadores nativos.
+Stats.STAT_IDS = {
+  kills = 107, -- "Creatures killed"
+  duels = 319, -- "Duels won"
+}
+
+-- Seguimiento por personaje: GUID -> { kills = n, duels = n, at = ts }.
+-- Así el pasado del personaje nunca cuenta: solo los incrementos.
+local SEEN_LIMIT = 10
 
 local debug = false
 
@@ -47,6 +63,7 @@ local function LogCapture(entry)
     table.remove(log, 1)
   end
 end
+Stats.LogCapture = LogCapture
 
 -- ---------------------------------------------------------------------------
 -- Acceso al estado
@@ -116,117 +133,101 @@ function Stats.ReportAll()
 end
 
 -- ---------------------------------------------------------------------------
--- Detección de duelos: mensajes de sistema localizados (DUEL_WINNER_*)
+-- Lectura de estadísticas nativas (defensiva: valores secretos, pcall y
+-- formatos agrupados tipo "1.234" / "1,234"). Ausencia NUNCA es cero.
 -- ---------------------------------------------------------------------------
 
-local duelPatterns = {}
-
--- Construye un patrón Lua a partir de un globalstring con comodines
--- (%s, %d, %1$s, %2$d…). Primero se sustituyen los comodines por bytes de
--- control, se escapa la puntuación mágica y al final se insertan los patrones
--- de captura. Así no quedan restos de escape a medias.
-local function MessagePattern(globalString, anchorEnd)
-  local p = globalString:gsub("%%[0-9]+%$s", "\1")
-  p = p:gsub("%%s", "\1")
-  p = p:gsub("%%[0-9]+%$d", "\2")
-  p = p:gsub("%%d", "\2")
-  p = p:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-  p = p:gsub("\1", "(.-)")
-  p = p:gsub("\2", "%%d+")
-  if anchorEnd then
-    return "^" .. p .. "$"
+local function ParseCounter(raw)
+  if type(issecretvalue) == "function" and issecretvalue(raw) then
+    return nil
   end
-  return "^" .. p
+  local n = tonumber(raw)
+  if n and n == n and n >= 0 and n <= 9007199254740991 and n % 1 == 0 then
+    return n
+  end
+  if type(raw) ~= "string" or #raw > 30 then
+    return nil
+  end
+  local text = raw:gsub("\194\160", ""):gsub("\226\128\175", ""):gsub("%s+", "")
+  if text:match("^%d+$") then
+    return tonumber(text)
+  end
+  -- Entero agrupado con separador de miles ("1.234", "1,234"): solo grupos
+  -- completos de tres, nunca interpretar decimales ambiguos.
+  if text:match("^%d%d?%d?([,.]%d%d%d)+$") then
+    return tonumber(text:gsub("[,.]", ""))
+  end
+  return nil
 end
 
-local function BuildDuelPatterns()
-  duelPatterns = {}
-  for _, gs in ipairs({ DUEL_WINNER_KNOCKOUT, DUEL_WINNER_RETREAT }) do
-    if type(gs) == "string" then
-      duelPatterns[#duelPatterns + 1] = MessagePattern(gs, true)
+local function ReadStatistic(id)
+  if type(GetStatistic) ~= "function" then
+    return nil
+  end
+  local ok, raw = pcall(GetStatistic, id)
+  if not ok then
+    return nil
+  end
+  return ParseCounter(raw)
+end
+
+-- Tabla de "último valor visto" del personaje actual (persistente).
+local function GetSeen(guid)
+  local settings = LaTabernaDB.settings
+  if type(settings.statSeen) ~= "table" then
+    settings.statSeen = {}
+  end
+  local seen = settings.statSeen[guid]
+  if not seen then
+    seen = {}
+    settings.statSeen[guid] = seen
+  end
+  seen.at = time()
+  -- Poda: como mucho SEEN_LIMIT personajes con seguimiento.
+  local count = 0
+  local oldestGuid, oldestAt
+  for g, v in pairs(settings.statSeen) do
+    count = count + 1
+    if not oldestAt or (v.at or 0) < oldestAt then
+      oldestGuid, oldestAt = g, v.at or 0
     end
   end
+  if count > SEEN_LIMIT and oldestGuid and oldestGuid ~= guid then
+    settings.statSeen[oldestGuid] = nil
+  end
+  return seen
 end
 
-local function OnSystemMessage(msg)
-  if not Session.Active() then
+local myGuid = nil
+
+-- Lee los contadores nativos y suma a la liga los incrementos desde la
+-- última lectura. Se ejecuta siempre (también sin sesión) para mantener la
+-- base al día y que la actividad fuera de sesión no cuente después.
+local function PollStatistics()
+  if not myGuid or not LaTabernaDB or not LaTabernaDB.settings then
     return
   end
-  -- Con el diagnóstico activo capturamos todos los mensajes de sistema para
-  -- ver exactamente qué suelta el cliente al terminar un duelo.
-  LogCapture({ kind = "system", msg = string.format("%q", tostring(msg)) })
-  -- En Forever los personajes pueden tener nombre y apellidos ("Timmy
-  -- Tommas"), y el mensaje de fin de duelo usa el nombre completo.
-  -- Comparamos contra todas las variantes conocidas del nombre propio.
-  local candidates = {}
-  local first, second = UnitFullName("player")
-  candidates[first] = true
-  if second and second ~= "" then
-    candidates[first .. " " .. second] = true
-  end
-  local plain = UnitName("player")
-  candidates[plain] = true
-  local realm = GetRealmName()
-  if realm and realm ~= "" then
-    candidates[plain .. " " .. realm] = true
-  end
-  local matchedWinner = nil
-  for _, pattern in ipairs(duelPatterns) do
-    matchedWinner = msg:match(pattern)
-    if matchedWinner then
-      DebugPrint("fin de duelo · ganador:", matchedWinner, "· yo:", plain)
-      if candidates[matchedWinner] then
-        Stats.AddLocal("duels", 1)
+  local seen = GetSeen(myGuid)
+  local inSession = Session.Active() ~= nil
+  for kind, id in pairs(Stats.STAT_IDS) do
+    local raw = ReadStatistic(id)
+    if raw then
+      local last = seen[kind]
+      if last == nil or raw < last then
+        -- Primera lectura (base) o reseteo del contador del juego.
+        seen[kind] = raw
+        DebugPrint("base " .. kind .. " = " .. raw)
+      elseif raw > last then
+        seen[kind] = raw
+        if inSession then
+          DebugPrint("+" .. (raw - last) .. " " .. kind .. " (total juego: " .. raw .. ")")
+          Stats.AddLocal(kind, raw - last)
+        end
       end
-      break
     end
   end
 end
-
--- ---------------------------------------------------------------------------
--- Conteo de muertes por mensajes de XP: "X muere, ganas N puntos de experiencia."
--- Es la fuente alternativa si el registro de combate está capado (valores
--- secretos). Solo cuenta muertes que dan XP: las criaturas triviales (grises)
--- no cuentan.
--- ---------------------------------------------------------------------------
-
-local xpPatterns = {}
-
-local function BuildXPPatterns()
-  xpPatterns = {}
-  for _, gs in ipairs({ COMBATLOG_XPGAIN_FIRSTPERSON }) do
-    if type(gs) == "string" then
-      -- Sin anclar al final: puede llevar sufijos (bonus de descanso, etc.)
-      xpPatterns[#xpPatterns + 1] = MessagePattern(gs, false)
-    end
-  end
-end
-
-local function OnXPGain(msg)
-  if not Session.Active() then
-    return
-  end
-  DebugPrint("mensaje XP crudo: " .. string.format("%q", tostring(msg)))
-  for i, pattern in ipairs(xpPatterns) do
-    local creature = msg:match(pattern)
-    if debug then
-      -- Las muertes con XP son frecuentes: solo se capturan con depura activo
-      -- para no rotar el registro y perder las capturas de duelos.
-      LogCapture({
-        kind = "xp",
-        msg = string.format("%q", tostring(msg)),
-        pattern = pattern,
-        matched = creature or false,
-      })
-    end
-    if creature then
-      DebugPrint("XP por muerte:", creature)
-      Stats.AddLocal("kills", 1)
-      return
-    end
-  end
-  DebugPrint("el mensaje de XP no encaja con el patrón")
-end
+Stats.Poll = PollStatistics
 
 -- ---------------------------------------------------------------------------
 -- Rares: el combat log está bloqueado, así que se detectan por eventos de
@@ -290,6 +291,7 @@ local lastMoney = nil
 
 local function OnMoney()
   if not Session.Active() then
+    lastMoney = GetMoney()
     return
   end
   local money = GetMoney()
@@ -300,16 +302,8 @@ local function OnMoney()
 end
 
 -- ---------------------------------------------------------------------------
--- Nota sobre el registro de combate: Forever BLOQUEA que los addons se
--- suscriban a COMBAT_LOG_EVENT_UNFILTERED (acción protegida, genera el aviso
--- de "addon bloqueado"). Por eso los contadores no usan el combat log:
---   - enemigos: mensajes de XP (arriba)
---   - duelos: mensajes de sistema (arriba)
---   - rares: sin fuente automática por ahora; el contador existe pero no sube
---     hasta encontrar una vía permitida (o pasa a confirmarlo el líder).
+-- Diagnóstico
 -- ---------------------------------------------------------------------------
-
-local myGuid = nil
 
 function Stats.ToggleDebug()
   debug = not debug
@@ -319,8 +313,10 @@ function Stats.ToggleDebug()
   Session.Print("Diagnóstico de contadores: " .. (debug and "ACTIVADO" or "desactivado"))
   Session.Print("Sesión activa: " .. tostring(Session.Active() ~= nil)
     .. " · GUID propio: " .. tostring(myGuid ~= nil))
-  Session.Print("Patrones de duelo: " .. #duelPatterns .. " · patrones de XP: " .. #xpPatterns)
-  Session.Print("GL XP: " .. tostring(COMBATLOG_XPGAIN_FIRSTPERSON))
+  for kind, id in pairs(Stats.STAT_IDS) do
+    Session.Print("GetStatistic(" .. id .. " / " .. kind .. ") = "
+      .. tostring(ReadStatistic(id)))
+  end
   return debug
 end
 
@@ -333,37 +329,20 @@ function Stats.Init()
   if LaTabernaDB and LaTabernaDB.settings then
     debug = LaTabernaDB.settings.statsDebug == true
   end
-  BuildDuelPatterns()
-  BuildXPPatterns()
   local frame = CreateFrame("Frame")
-  frame:RegisterEvent("CHAT_MSG_SYSTEM")
-  frame:RegisterEvent("CHAT_MSG_COMBAT_XP_GAIN")
   frame:RegisterEvent("PLAYER_MONEY")
   frame:RegisterEvent("PLAYER_TARGET_CHANGED")
   frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
   frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
   pcall(frame.RegisterUnitEvent, frame, "UNIT_HEALTH", "target", "mouseover", "focus")
   lastMoney = GetMoney()
-  -- Eventos nativos de duelo, por si Forever no usa el mensaje de sistema.
-  -- Se registran con pcall por si no existen en este cliente.
-  for _, ev in ipairs({ "DUEL_REQUESTED", "DUEL_FINISHED" }) do
+  -- Tras un duelo o una muerte con XP, releer las estadísticas en cuanto el
+  -- juego las haya actualizado (el ticker de 15 s es la red de seguridad).
+  for _, ev in ipairs({ "DUEL_FINISHED", "CHAT_MSG_COMBAT_XP_GAIN" }) do
     pcall(frame.RegisterEvent, frame, ev)
   end
-  -- Sonda amplia: canales y eventos candidatos por donde podría llegar el
-  -- resultado de un duelo en Forever. Con diagnóstico activo se captura todo.
-  for _, ev in ipairs({
-    "DUEL_INBOUNDS", "DUEL_OUTOFBOUNDS",
-    "CHAT_MSG_BG_SYSTEM_NEUTRAL", "CHAT_MSG_BG_SYSTEM_ALLIANCE",
-    "CHAT_MSG_BG_SYSTEM_HORDE", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE",
-  }) do
-    pcall(frame.RegisterEvent, frame, ev)
-  end
-  frame:SetScript("OnEvent", function(_, event, arg1, arg2)
-    if event == "CHAT_MSG_SYSTEM" then
-      OnSystemMessage(arg1)
-    elseif event == "CHAT_MSG_COMBAT_XP_GAIN" then
-      OnXPGain(arg1)
-    elseif event == "PLAYER_MONEY" then
+  frame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "PLAYER_MONEY" then
       OnMoney()
     elseif event == "PLAYER_TARGET_CHANGED" then
       MarkRareIfApplicable("target")
@@ -373,24 +352,11 @@ function Stats.Init()
       MarkRareIfApplicable("focus")
     elseif event == "UNIT_HEALTH" then
       OnUnitHealth(arg1)
-    elseif event == "DUEL_REQUESTED" or event == "DUEL_FINISHED" then
-      DebugPrint(event, arg1, arg2)
-      LogCapture({
-        kind = "event",
-        event = event,
-        arg1 = string.format("%q", tostring(arg1)),
-        arg2 = string.format("%q", tostring(arg2)),
-      })
-    else
-      -- Sonda: solo capturas relacionadas con duelos, para no rotar el log
-      local text = tostring(arg1):lower()
-      if event:find("DUEL") or text:find("duelo", 1, true) then
-        LogCapture({
-          kind = "probe",
-          event = event,
-          msg = string.format("%q", tostring(arg1)),
-        })
-      end
+    elseif event == "DUEL_FINISHED" or event == "CHAT_MSG_COMBAT_XP_GAIN" then
+      C_Timer.After(2, PollStatistics)
     end
   end)
+  -- Base inicial sin contar nada y muestreo periódico.
+  PollStatistics()
+  C_Timer.NewTicker(15, PollStatistics)
 end

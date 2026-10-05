@@ -15,6 +15,99 @@ local function Defaults()
   }
 end
 
+-- Ajustes: se valida cada campo y se descarta lo que no cumpla (tipos y
+-- rangos). Los SavedVariables los escribe el juego, pero pueden venir de
+-- versiones antiguas o quedar corruptos.
+local VALID_ANCHORS = {
+  CENTER = true, TOP = true, BOTTOM = true, LEFT = true, RIGHT = true,
+  TOPLEFT = true, TOPRIGHT = true, BOTTOMLEFT = true, BOTTOMRIGHT = true,
+}
+
+local function SanitizeSettings()
+  local st = LaTabernaDB.settings
+  if st.alias ~= nil and (type(st.alias) ~= "string" or #st.alias == 0 or #st.alias > 24) then
+    st.alias = nil
+  end
+  if st.minimapAngle ~= nil and type(st.minimapAngle) ~= "number" then
+    st.minimapAngle = nil
+  end
+  if st.statsDebug ~= nil and type(st.statsDebug) ~= "boolean" then
+    st.statsDebug = nil
+  end
+  if st.scale ~= nil and (type(st.scale) ~= "number" or st.scale < 0.6 or st.scale > 1.6) then
+    st.scale = nil
+  end
+  local p = st.position
+  if p ~= nil and (type(p) ~= "table" or not VALID_ANCHORS[p.point] or not VALID_ANCHORS[p.relative]
+    or type(p.x) ~= "number" or type(p.y) ~= "number" or p.x ~= p.x or p.y ~= p.y
+    or math.abs(p.x) > 10000 or math.abs(p.y) > 10000) then
+    st.position = nil
+  end
+  if st.statSeen ~= nil then
+    if type(st.statSeen) ~= "table" then
+      st.statSeen = nil
+    else
+      for guid, seen in pairs(st.statSeen) do
+        if type(guid) ~= "string" or type(seen) ~= "table" then
+          st.statSeen[guid] = nil
+        else
+          for kind, value in pairs(seen) do
+            if kind ~= "at" and (type(value) ~= "number" or value < 0) then
+              seen[kind] = nil
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+-- La sesión persistida debe tener una estructura mínima sana; si no, se
+-- archiva una nota en el historial y se descarta (nunca se pierde el resto).
+local function SanitizeSession()
+  local s = LaTabernaDB.session
+  if s == nil then
+    return
+  end
+  if type(s) ~= "table" or type(s.id) ~= "string" or type(s.organizer) ~= "string"
+    or type(s.participants) ~= "table" then
+    LaTabernaDB.history[#LaTabernaDB.history + 1] = {
+      id = type(s) == "table" and s.id or nil,
+      closedAt = time(),
+      note = "Sesión descartada al cargar: datos corruptos o de otra versión.",
+    }
+    LaTabernaDB.session = nil
+    return
+  end
+  if type(s.challenges) ~= "table" then
+    s.challenges = {}
+  end
+  if type(s.results) ~= "table" then
+    s.results = {}
+  end
+  if type(s.stats) ~= "table" then
+    s.stats = {}
+  end
+  if type(s.seenEvents) ~= "table" then
+    s.seenEvents = {}
+  end
+  for account, p in pairs(s.participants) do
+    if type(account) ~= "string" or type(p) ~= "table" then
+      s.participants[account] = nil
+    else
+      if type(p.alts) ~= "table" then
+        p.alts = {}
+      end
+      if type(p.alias) ~= "string" or p.alias == "" then
+        p.alias = nil
+      end
+      if type(p.joinedAt) ~= "number" then
+        p.joinedAt = time()
+      end
+    end
+  end
+end
+
 function Storage.Init()
   if type(LaTabernaDB) ~= "table" then
     LaTabernaDB = Defaults()
@@ -25,9 +118,19 @@ function Storage.Init()
   if type(LaTabernaDB.settings) ~= "table" then
     LaTabernaDB.settings = {}
   end
+  if type(LaTabernaDB.schemaVersion) == "number"
+    and LaTabernaDB.schemaVersion > Storage.SCHEMA_VERSION then
+    -- El guardado es de una versión más nueva del addon: no tocar nada.
+    if LaTaberna.Session and LaTaberna.Session.Print then
+      LaTaberna.Session.Print("Los datos guardados son de una versión más nueva; actualiza el addon.")
+    end
+    return
+  end
   if LaTabernaDB.schemaVersion ~= Storage.SCHEMA_VERSION then
     Storage.Migrate()
   end
+  SanitizeSettings()
+  SanitizeSession()
 end
 
 -- Punto de entrada para futuras migraciones entre versiones de esquema.

@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.3.1"
+Core.VERSION = "0.4.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -83,9 +83,31 @@ local function PrintHelp()
   print("  /taberna alias <nombre> — te pones un alias (vacío para quitarlo)")
   print("  /taberna export — muestra un respaldo copiable de la sesión")
   print("  /taberna import — importa un respaldo")
+  print("  /taberna escala 0.6-1.6 — tamaño de la ventana (reset para el defecto)")
+  print("  /taberna estado — versiones, APIs y estado de la sesión")
   print("  /taberna stat <id> — diagnóstico: muestra GetStatistic(id)")
   print("  /taberna scanstats <desde> <hasta> — diagnóstico: estadísticas con valor")
   print("  /taberna depura — activa/desactiva el diagnóstico de contadores")
+end
+
+local function PrintStatus()
+  Session.Print("Addon " .. Core.VERSION .. " · protocolo " .. Protocol.VERSION
+    .. " · cliente " .. tostring(GetBuildInfo()))
+  Session.Print("GetStatistic: " .. type(GetStatistic)
+    .. " · issecretvalue: " .. type(issecretvalue)
+    .. " · RegisterAddonMessagePrefix: "
+    .. tostring(C_ChatInfo and type(C_ChatInfo.RegisterAddonMessagePrefix)))
+  local s = Session.Active()
+  if s then
+    local count = 0
+    for _ in pairs(s.participants) do
+      count = count + 1
+    end
+    Session.Print("Sesión " .. s.id .. " · participantes: " .. count
+      .. " · rol: " .. (Session.IsOrganizer() and "organizador" or "participante"))
+  else
+    Session.Print("Sin sesión activa.")
+  end
 end
 
 SLASH_LATABERNA1 = "/taberna"
@@ -109,6 +131,19 @@ SlashCmdList["LATABERNA"] = function(msg)
     LaTaberna.UI.ShowImport()
   elseif cmd == "depura" then
     LaTaberna.Stats.ToggleDebug()
+  elseif cmd == "escala" then
+    local value = msg:match("^%S+%s+(.+)$")
+    if not value then
+      Session.Print("Escala actual: "
+        .. string.format("%.2f", (LaTabernaDB.settings and LaTabernaDB.settings.scale) or 1.0)
+        .. " · uso: /taberna escala 0.6-1.6 o reset")
+    elseif strtrim(value) == "reset" then
+      LaTaberna.UI.SetScale(nil)
+    else
+      LaTaberna.UI.SetScale(tonumber(value))
+    end
+  elseif cmd == "estado" then
+    PrintStatus()
   elseif cmd == "stat" then
     local id = tonumber(msg:match("^%S+%s+(%d+)") or "")
     if id and GetStatistic then
