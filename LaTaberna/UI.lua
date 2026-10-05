@@ -434,38 +434,47 @@ end
 -- Pestaña 4: Sesión
 -- ---------------------------------------------------------------------------
 
+-- Encabezado de sección: título con línea dorada debajo (estilo IRS).
+local function MakeHeading(parent, title, x, y, width, r, g, b)
+  local fs = MakeText(parent, "GameFontNormal", x, y, width, 16)
+  fs:SetText(title)
+  MakeFill(parent, x, y - 17, width, 1, r or 1, g or 0.82, b or 0, 0.25)
+  return fs
+end
+
 local function CreateSessionTab(parent)
   local f = CreateFrame("Frame", nil, parent)
   f:SetAllPoints()
 
-  for i = 1, 8 do
-    local line = MakeText(f, i == 1 and "GameFontHighlight" or "GameFontNormal",
-      8, -8 - (i - 1) * 21, 560, 16)
-    sessionLines[i] = line
-  end
+  -- Sección: estado
+  MakeHeading(f, "Estado de la sesión", 4, -6, 576)
+  -- columna izquierda
+  sessionLines[1] = MakeText(f, "GameFontHighlight", 8, -28, 300, 16)
+  sessionLines[2] = MakeText(f, "GameFontNormal", 8, -47, 300, 14)
+  sessionLines[3] = MakeText(f, "GameFontNormal", 8, -65, 300, 14)
+  -- columna derecha
+  sessionLines[4] = MakeText(f, "GameFontNormal", 330, -47, 250, 14)
+  sessionLines[5] = MakeText(f, "GameFontNormal", 330, -65, 250, 14)
+  sessionLines[6] = MakeText(f, "GameFontNormal", 330, -83, 250, 14)
 
-  -- Fila 1: ciclo de vida de la sesión
   sessionButtons.create = MakeButton(f, "Crear sesión", 120, 22)
-  sessionButtons.create:SetPoint("TOPLEFT", 8, -186)
+  sessionButtons.create:SetPoint("TOPLEFT", 8, -88)
   sessionButtons.create:SetScript("OnClick", function()
     Session.Create()
   end)
 
-  sessionButtons.leave = MakeButton(f, "Salir", 80, 22)
-  sessionButtons.leave:SetPoint("LEFT", sessionButtons.create, "RIGHT", 8, 0)
+  sessionButtons.leave = MakeButton(f, "Salir de la sesión", 130, 22)
+  sessionButtons.leave:SetPoint("TOPLEFT", 8, -88)
   sessionButtons.leave:SetScript("OnClick", function()
     Session.Leave()
   end)
 
-  sessionButtons.close = MakeDangerButton(f, "Cerrar sesión", 150)
-  sessionButtons.close:SetPoint("LEFT", sessionButtons.leave, "RIGHT", 8, 0)
-  sessionButtons.close.onConfirm = function()
-    Session.Close()
-  end
+  -- Sección: invitaciones
+  MakeHeading(f, "Invitaciones", 4, -126, 576)
+  sessionLines[7] = MakeText(f, "GameFontNormal", 8, -148, 560, 14)
 
-  -- Fila 2: invitaciones
-  sessionButtons.invite = MakeButton(f, "Código de invitación", 150, 22)
-  sessionButtons.invite:SetPoint("TOPLEFT", sessionButtons.create, "BOTTOMLEFT", 0, -8)
+  sessionButtons.invite = MakeButton(f, "Copiar código", 130, 22)
+  sessionButtons.invite:SetPoint("TOPLEFT", 8, -168)
   sessionButtons.invite:SetScript("OnClick", function()
     UI.ShowInvite()
   end)
@@ -476,9 +485,11 @@ local function CreateSessionTab(parent)
     UI.ShowJoin()
   end)
 
-  -- Fila 3: respaldo
+  -- Sección: respaldo y perfil
+  MakeHeading(f, "Respaldo y perfil", 4, -206, 576)
+
   sessionButtons.export = MakeButton(f, "Exportar", 90, 22)
-  sessionButtons.export:SetPoint("TOPLEFT", sessionButtons.invite, "BOTTOMLEFT", 0, -8)
+  sessionButtons.export:SetPoint("TOPLEFT", 8, -228)
   sessionButtons.export:SetScript("OnClick", function()
     UI.ShowExport()
   end)
@@ -495,20 +506,31 @@ local function CreateSessionTab(parent)
     UI.ShowAlias()
   end)
 
-  -- Fila 4: borrado (doble confirmación)
-  sessionButtons.reset = MakeDangerButton(f, "Reiniciar liga", 190)
-  sessionButtons.reset:SetPoint("TOPLEFT", sessionButtons.export, "BOTTOMLEFT", 0, -12)
+  -- Sección: zona peligrosa (línea roja; todo con doble confirmación)
+  MakeHeading(f, "Zona peligrosa", 4, -266, 576, 1, 0.3, 0.3)
+
+  sessionButtons.close = MakeDangerButton(f, "Cerrar sesión", 140)
+  sessionButtons.close:SetPoint("TOPLEFT", 8, -288)
+  sessionButtons.close.onConfirm = function()
+    Session.Close()
+  end
+
+  sessionButtons.reset = MakeDangerButton(f, "Reiniciar liga", 140)
+  sessionButtons.reset:SetPoint("LEFT", sessionButtons.close, "RIGHT", 8, 0)
   sessionButtons.reset.onConfirm = function()
     Session.ResetLeague()
   end
 
-  sessionButtons.wipeHistory = MakeDangerButton(f, "Borrar historial", 190)
+  sessionButtons.wipeHistory = MakeDangerButton(f, "Borrar historial", 140)
   sessionButtons.wipeHistory:SetPoint("LEFT", sessionButtons.reset, "RIGHT", 8, 0)
   sessionButtons.wipeHistory.onConfirm = function()
     LaTaberna.Storage.ClearHistory()
     Session.Print("Historial local borrado.")
     UI.Refresh()
   end
+
+  -- Versión, abajo a la derecha y discreta
+  sessionLines[8] = MakeText(f, "GameFontDisableSmall", 280, -336, 296, 12, "RIGHT")
 
   return f
 end
@@ -523,22 +545,23 @@ local function RefreshSessionTab()
     for _ in pairs(s.participants) do
       count = count + 1
     end
-    sessionLines[1]:SetText("Sesión activa")
+    sessionLines[1]:SetText(Session.IsOrganizer() and "Sesión activa (eres el organizador)"
+      or "Sesión activa")
     sessionLines[2]:SetText("Organizador: " .. Session.DisplayName(s.organizer or "?"))
-    sessionLines[3]:SetText("Tu rol: " .. (Session.IsOrganizer() and "organizador" or "participante")
-      .. " · tu cuenta: " .. Session.PlayerAccount())
+    sessionLines[3]:SetText("Tu cuenta: " .. Session.PlayerAccount())
     sessionLines[4]:SetText("Participantes: " .. count)
     local online = Session.IsOrganizerOnline()
     sessionLines[5]:SetText("Confirmaciones: "
       .. (online and "disponibles" or "en pausa (organizador desconectado)"))
-    sessionLines[6]:SetText("Código de invitación: " .. (s.id or "?"))
-    sessionLines[7]:SetText("Resultados confirmados: " .. #s.results)
+    sessionLines[6]:SetText("Resultados confirmados: " .. #s.results)
+    sessionLines[7]:SetText("Código de invitación: " .. (s.id or "?"))
   else
     sessionLines[1]:SetText("Sin sesión activa")
     sessionLines[2]:SetText("Crea una sesión o espera a que el organizador te invite.")
+    sessionLines[7]:SetText("¿Te han pasado un código? Únete con «Unirse con código…».")
   end
-  sessionLines[8]:SetText("Versión del addon: " .. ADDON_VERSION
-    .. " · protocolo: " .. LaTaberna.Protocol.VERSION)
+  sessionLines[8]:SetText("La Taberna " .. ADDON_VERSION
+    .. " · protocolo " .. LaTaberna.Protocol.VERSION)
 
   sessionButtons.create:SetShown(s == nil)
   sessionButtons.leave:SetShown(s ~= nil and not Session.IsOrganizer())
