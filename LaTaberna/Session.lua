@@ -188,6 +188,9 @@ function Session.Create()
   Comm.BroadcastChallenges()
   Comm.BroadcastParticipantAdd(me, myChar)
   ApplySavedAlias()
+  if LaTaberna.Played then
+    LaTaberna.Played.ReportToSession()
+  end
   Refresh()
 end
 
@@ -206,6 +209,9 @@ function Session.AcceptJoin(sid)
   Comm.SendGuild("SREQ", sid, nil, Session.PlayerAccount())
   Print("Te has unido a la liga de " .. organizer .. ".")
   ApplySavedAlias()
+  if LaTaberna.Played then
+    LaTaberna.Played.ReportToSession()
+  end
   Refresh()
 end
 
@@ -314,6 +320,9 @@ function Session.ApplyResult(sid, eid, challengeId, participant, points, ts)
     points = points,
     ts = ts,
   }
+  if LaTaberna.Sounds then
+    LaTaberna.Sounds.Play("fanfare")
+  end
   local challenge = Rules.GetChallenge(s, challengeId)
   Print(Session.DisplayName(participant) .. " ha completado «" .. (challenge and challenge.title or challengeId)
     .. "» (+" .. tostring(points) .. " pt).")
@@ -353,10 +362,17 @@ function Session.ReportStat(account, kind, value)
   if not s then
     return
   end
-  if kind ~= "kills" and kind ~= "duels" and kind ~= "rares" and kind ~= "gold" then
+  if not s.participants[account] then
     return
   end
-  if not s.participants[account] then
+  local valid = false
+  for _, k in ipairs(LaTaberna.Stats.KINDS) do
+    if k == kind then
+      valid = true
+      break
+    end
+  end
+  if not valid then
     return
   end
   if type(s.stats) ~= "table" then
@@ -367,6 +383,9 @@ function Session.ReportStat(account, kind, value)
     entry[kind] = value
   end
   s.stats[account] = entry
+  if LaTaberna.Stats and LaTaberna.Stats.CheckLeaders then
+    LaTaberna.Stats.CheckLeaders()
+  end
   Refresh()
 end
 
@@ -464,6 +483,9 @@ local function OnChal(sid, f, sender, senderAccount)
     -- Invitación a una liga que no tenemos
     pendingJoinSid = sid
     local organizer = Session.OrganizerFromId(sid) or "?"
+    if LaTaberna.Sounds then
+      LaTaberna.Sounds.Play("invite")
+    end
     StaticPopup_Show("LATABERNA_JOIN", organizer, nil, sid)
   end
 end
@@ -506,6 +528,9 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
         LaTaberna.Comm.BroadcastParticipantAdd(senderAccount, sender)
         LaTaberna.Comm.SendSnapshotTo(sender)
         Print(senderAccount .. " se ha unido a la liga.")
+        if LaTaberna.Sounds then
+          LaTaberna.Sounds.Play("join")
+        end
         Refresh()
       end
     end
@@ -514,6 +539,9 @@ function Session.OnMessage(op, pv, sid, eid, f, sender, channel)
       RemoveParticipant(senderAccount)
       LaTaberna.Comm.BroadcastParticipantRemove(senderAccount)
       Print(senderAccount .. " ha salido de la liga.")
+      if LaTaberna.Sounds then
+        LaTaberna.Sounds.Play("leave")
+      end
       Refresh()
     end
   elseif op == "PART" then
@@ -562,31 +590,29 @@ end
 -- Estado del organizador (para pausar confirmaciones si está desconectado)
 -- ---------------------------------------------------------------------------
 
-function Session.IsOrganizerOnline()
-  local s = Session.Active()
-  if not s then
-    return false
-  end
-  if Session.IsOrganizer() then
+-- ¿Está conectada una cuenta? Mira cualquiera de sus personajes conocidos en
+-- la lista de hermandad. El propio jugador siempre está conectado.
+function Session.IsAccountOnline(account)
+  if account == Session.PlayerAccount() then
     return true
   end
-  if not IsInGuild() then
+  local s = Session.Active()
+  if not s or not IsInGuild() then
     return false
   end
-  -- El organizador puede estar conectado con cualquiera de sus personajes.
   local candidates = {}
-  local p = s.participants[s.organizer]
+  local p = s.participants[account]
   if p and type(p.alts) == "table" then
     for char in pairs(p.alts) do
       candidates[char] = true
     end
   end
-  for char, account in pairs(charToAccount) do
-    if account == s.organizer then
+  for char, acc in pairs(charToAccount) do
+    if acc == account then
       candidates[char] = true
     end
   end
-  candidates[s.organizer] = true -- fallback: la "cuenta" es un personaje
+  candidates[account] = true -- fallback: la "cuenta" es un personaje
   for i = 1, GetNumGuildMembers() do
     local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
     if name and online and candidates[Session.NormalizeName(name)] then
@@ -594,4 +620,12 @@ function Session.IsOrganizerOnline()
     end
   end
   return false
+end
+
+function Session.IsOrganizerOnline()
+  local s = Session.Active()
+  if not s then
+    return false
+  end
+  return Session.IsAccountOnline(s.organizer)
 end

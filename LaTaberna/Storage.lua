@@ -43,6 +43,25 @@ local function SanitizeSettings()
     or math.abs(p.x) > 10000 or math.abs(p.y) > 10000) then
     st.position = nil
   end
+  if st.playedByGuid ~= nil then
+    if type(st.playedByGuid) ~= "table" then
+      st.playedByGuid = nil
+    else
+      for guid, entry in pairs(st.playedByGuid) do
+        if type(guid) ~= "string" or type(entry) ~= "table"
+          or type(entry.total) ~= "number" or entry.total < 0 then
+          st.playedByGuid[guid] = nil
+        else
+          if type(entry.name) ~= "string" then
+            entry.name = "?"
+          end
+          if type(entry.at) ~= "number" then
+            entry.at = time()
+          end
+        end
+      end
+    end
+  end
   if st.statSeen ~= nil then
     if type(st.statSeen) ~= "table" then
       st.statSeen = nil

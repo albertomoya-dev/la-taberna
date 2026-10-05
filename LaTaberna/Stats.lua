@@ -14,24 +14,39 @@ local Session = LaTaberna.Session
 local Stats = {}
 LaTaberna.Stats = Stats
 
-Stats.KINDS = { "kills", "duels", "rares", "gold" }
+Stats.KINDS = { "kills", "duels", "duelsLost", "rares", "gold", "played", "quests", "deaths", "hk" }
 Stats.LABELS = {
   kills = "Enemigos derrotados",
   duels = "Duelos ganados",
+  duelsLost = "Duelos perdidos",
   rares = "Rares derrotados",
   gold = "Oro ganado",
+  played = "Tiempo jugado (cuenta)",
+  quests = "Misiones completadas",
+  deaths = "Muertes totales",
+  hk = "Muertes con honor",
 }
 Stats.SHORT_LABELS = {
   kills = "Enemigos",
   duels = "Duelos",
+  duelsLost = "Derrotas",
   rares = "Rares",
   gold = "Oro",
+  played = "Tiempo",
+  quests = "Misiones",
+  deaths = "Muertes",
+  hk = "Honor",
 }
 
 -- IDs de Achievement.db2 (build 1.60.1.70124) para los contadores nativos.
+-- Los que no tienen estadística (rares, oro, tiempo) van por otras vías.
 Stats.STAT_IDS = {
-  kills = 107, -- "Creatures killed"
-  duels = 319, -- "Duels won"
+  kills = 107,     -- "Creatures killed"
+  duels = 319,     -- "Duels won"
+  duelsLost = 320, -- "Duels lost"
+  quests = 98,     -- "Quests completed"
+  deaths = 60,     -- "Total deaths"
+  hk = 588,        -- "Total Honorable Kills"
 }
 
 -- Seguimiento por personaje: GUID -> { kills = n, duels = n, at = ts }.
@@ -108,9 +123,59 @@ function Stats.AddLocal(kind, amount)
   entry[kind] = (entry[kind] or 0) + amount
   s.stats[account] = entry
   LaTaberna.Comm.SendGuild("STAT", s.id, nil, account, kind, tostring(entry[kind]))
+  Stats.CheckLeaders()
   if LaTaberna.UI then
     LaTaberna.UI.Refresh()
   end
+end
+
+-- Para contadores absolutos (tiempo jugado): nos quedamos con el mayor.
+function Stats.ReportAbsolute(kind, value)
+  local s = EnsureSessionStats()
+  if not s or type(value) ~= "number" or value <= 0 then
+    return
+  end
+  local account = Session.PlayerAccount()
+  local entry = s.stats[account] or {}
+  if (entry[kind] or 0) >= value then
+    s.stats[account] = entry
+    return
+  end
+  entry[kind] = value
+  s.stats[account] = entry
+  LaTaberna.Comm.SendGuild("STAT", s.id, nil, account, kind, tostring(entry[kind]))
+  Stats.CheckLeaders()
+  if LaTaberna.UI then
+    LaTaberna.UI.Refresh()
+  end
+end
+
+-- Detecta cambios de liderato en cada ranking y los anuncia con fanfarria.
+-- La primera pasada tras entrar es silenciosa (solo memoriza).
+local leaders = {}
+local leadersPrimed = false
+
+function Stats.CheckLeaders()
+  local s = Session.Active()
+  if not s then
+    leaders = {}
+    leadersPrimed = false
+    return
+  end
+  for _, kind in ipairs(Stats.KINDS) do
+    local board = Stats.ComputeLeaderboard(kind)
+    local top = board[1]
+    local topAccount = (top and top.value > 0) and top.name or nil
+    if leadersPrimed and topAccount and leaders[kind] and leaders[kind] ~= topAccount then
+      Session.Print(Session.DisplayName(topAccount) .. " toma el liderato en "
+        .. Stats.SHORT_LABELS[kind] .. ".")
+      if LaTaberna.Sounds then
+        LaTaberna.Sounds.Play("leadChange")
+      end
+    end
+    leaders[kind] = topAccount
+  end
+  leadersPrimed = true
 end
 
 -- Republica nuestros contadores al entrar, para quien no los tenga.

@@ -11,7 +11,7 @@ local Stats = LaTaberna.Stats
 local UI = {}
 LaTaberna.UI = UI
 
-local ADDON_VERSION = "0.4.0"
+local ADDON_VERSION = "0.5.0"
 local W, H = 620, 440   -- tamaño base, antes de la escala
 local DEFAULT_SCALE = 1.0
 local MAX_ROWS = 15     -- filas visibles de la clasificación
@@ -37,7 +37,7 @@ local picker
 local editDialog
 local textDialog
 
-local TAB_NAMES = { "Clasificación", "Liga", "Retos", "Sesión" }
+local TAB_NAMES = { "Clasificación", "Liga", "Retos", "Historial", "Sesión" }
 
 -- Colores
 local GOLD = { 1, 0.82, 0 }
@@ -131,8 +131,9 @@ local function HideRowTooltip(self)
   end
 end
 
--- Fila rayada de ranking: posición, nombre y valor alineado a la derecha.
--- Si se asigna row.tooltipText, al pasar el ratón se muestra como tooltip.
+-- Fila rayada de ranking: punto de estado (online), posición, nombre y valor
+-- alineado a la derecha. Con row.tooltipText se muestra tooltip al pasar el
+-- ratón.
 local function MakeRankRow(parent, x, y, width, index)
   local r = CreateFrame("Button", nil, parent)
   r:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -141,8 +142,12 @@ local function MakeRankRow(parent, x, y, width, index)
     MakeFill(r, 0, 0, width, 17, 1, 1, 1, 0.05)
   end
   r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-  r.rank = MakeText(r, "GameFontDisableSmall", 4, 0, 26, 17)
-  r.name = MakeText(r, "GameFontHighlightSmall", 34, 0, width - 190, 17)
+  r.dot = r:CreateTexture(nil, "ARTWORK")
+  r.dot:SetSize(8, 8)
+  r.dot:SetPoint("LEFT", r, "LEFT", 4, 0)
+  r.dot:Hide()
+  r.rank = MakeText(r, "GameFontDisableSmall", 16, 0, 24, 17)
+  r.name = MakeText(r, "GameFontHighlightSmall", 44, 0, width - 200, 17)
   r.value = MakeText(r, "GameFontHighlightSmall", width - 154, 0, 150, 17, "RIGHT")
   r:EnableMouse(true)
   r:SetScript("OnEnter", function(self)
@@ -155,6 +160,27 @@ local function MakeRankRow(parent, x, y, width, index)
   end)
   r:SetScript("OnLeave", HideRowTooltip)
   return r
+end
+
+-- Medallas para el podio: oro, plata y bronce.
+local MEDAL_COLORS = {
+  { 1, 0.84, 0 },
+  { 0.75, 0.75, 0.78 },
+  { 0.8, 0.5, 0.2 },
+}
+
+-- Pinta el punto de conexión de una fila (verde online, gris offline).
+local function SetRowOnline(row, account)
+  if not account then
+    row.dot:Hide()
+    return
+  end
+  if Session.IsAccountOnline(account) then
+    row.dot:SetColorTexture(0.2, 1, 0.2, 1)
+  else
+    row.dot:SetColorTexture(0.45, 0.45, 0.45, 1)
+  end
+  row.dot:Show()
 end
 
 -- Oro con los iconos de moneda del juego; en modo daltónico, letras o/p/c.
@@ -188,10 +214,13 @@ local function FormatMoney(copper)
 end
 UI.FormatMoney = FormatMoney
 
--- Formatea el valor de un ranking; el oro se guarda en cobre.
+-- Formatea el valor de un ranking; el oro se guarda en cobre y el tiempo
+-- jugado en segundos.
 local function FormatStatValue(kind, value)
   if kind == "gold" then
     return FormatMoney(value)
+  elseif kind == "played" then
+    return LaTaberna.Played and LaTaberna.Played.Format(value) or tostring(value)
   end
   return tostring(value)
 end
@@ -257,6 +286,7 @@ local function RefreshLeaderboard()
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.dot:Hide()
       row.tooltipText = nil
     end
     return
@@ -267,6 +297,12 @@ local function RefreshLeaderboard()
     local entry = board[i]
     if entry then
       row.rank:SetText(i .. ".")
+      local medal = MEDAL_COLORS[i]
+      if medal then
+        row.rank:SetTextColor(unpack(medal))
+      else
+        row.rank:SetTextColor(0.5, 0.5, 0.5)
+      end
       row.name:SetText(Session.DisplayName(entry.name))
       if entry.name == me then
         row.name:SetTextColor(unpack(GOLD))
@@ -274,11 +310,14 @@ local function RefreshLeaderboard()
         row.name:SetTextColor(unpack(WHITE))
       end
       row.value:SetText(entry.points .. " pt")
+      SetRowOnline(row, entry.name)
       row.tooltipText = "Cuenta: " .. entry.name
+        .. (Session.IsAccountOnline(entry.name) and "\nConectado" or "\nDesconectado")
     else
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.dot:Hide()
       row.tooltipText = nil
     end
   end
@@ -346,6 +385,7 @@ RefreshLeague = function()
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.dot:Hide()
       row.tooltipText = nil
     end
     return
@@ -356,6 +396,12 @@ RefreshLeague = function()
     local entry = board[i]
     if entry then
       row.rank:SetText(i .. ".")
+      local medal = MEDAL_COLORS[i]
+      if medal then
+        row.rank:SetTextColor(unpack(medal))
+      else
+        row.rank:SetTextColor(0.5, 0.5, 0.5)
+      end
       row.name:SetText(Session.DisplayName(entry.name))
       if entry.name == me then
         row.name:SetTextColor(unpack(GOLD))
@@ -363,11 +409,13 @@ RefreshLeague = function()
         row.name:SetTextColor(unpack(WHITE))
       end
       row.value:SetText(FormatStatValue(leagueKind, entry.value))
+      SetRowOnline(row, entry.name)
       row.tooltipText = "Cuenta: " .. entry.name .. "\nLo reporta su propio cliente."
     else
       row.rank:SetText("")
       row.name:SetText("")
       row.value:SetText("")
+      row.dot:Hide()
       row.tooltipText = nil
     end
   end
@@ -431,7 +479,56 @@ local function RefreshChallenges()
 end
 
 -- ---------------------------------------------------------------------------
--- Pestaña 4: Sesión
+-- Pestaña 4: Historial (sesiones cerradas, locales)
+-- ---------------------------------------------------------------------------
+
+local historyRows = {}
+local historyHeader
+local HISTORY_ROWS = 15
+
+local function CreateHistoryTab(parent)
+  local f = CreateFrame("Frame", nil, parent)
+  f:SetAllPoints()
+
+  historyHeader = MakeText(f, "GameFontNormal", 4, -8, 440, 16)
+
+  for i = 1, HISTORY_ROWS do
+    historyRows[i] = MakeRankRow(f, 4, -30 - (i - 1) * 17, 560, i)
+  end
+  return f
+end
+
+local function RefreshHistory()
+  local history = LaTaberna.Storage.GetHistory()
+  historyHeader:SetText(#history > 0
+    and "Sesiones cerradas (más recientes primero)"
+    or "Aún no hay sesiones cerradas.")
+  for i, row in ipairs(historyRows) do
+    local entry = history[#history - i + 1]
+    if entry then
+      row.rank:SetText(i .. ".")
+      row.rank:SetTextColor(0.5, 0.5, 0.5)
+      row.name:SetText(entry.note
+        or ((entry.organizer or "?")
+          .. " · " .. tostring(entry.participants or 0) .. " participantes"
+          .. " · " .. tostring(entry.results or 0) .. " resultados"))
+      row.name:SetTextColor(unpack(WHITE))
+      row.value:SetText(type(entry.closedAt) == "number"
+        and date("%d/%m/%y %H:%M", entry.closedAt) or "")
+      row.dot:Hide()
+      row.tooltipText = entry.id and ("Sesión: " .. entry.id) or nil
+    else
+      row.rank:SetText("")
+      row.name:SetText("")
+      row.value:SetText("")
+      row.dot:Hide()
+      row.tooltipText = nil
+    end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- Pestaña 5: Sesión
 -- ---------------------------------------------------------------------------
 
 -- Encabezado de sección: título con línea dorada debajo (estilo IRS).
@@ -923,6 +1020,17 @@ local function CreateMinimapButton()
   b:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:AddLine("La Taberna")
+    local s = Session.Active()
+    if s then
+      local count = 0
+      for _ in pairs(s.participants) do
+        count = count + 1
+      end
+      GameTooltip:AddLine("Sesión activa · " .. count .. " participantes", 0.2, 1, 0.2)
+      GameTooltip:AddLine("Organizador: " .. Session.DisplayName(s.organizer or "?"), 0.8, 0.8, 0.8)
+    else
+      GameTooltip:AddLine("Sin sesión activa", 0.6, 0.6, 0.6)
+    end
     GameTooltip:AddLine("Clic: abrir o cerrar la ventana", 1, 1, 1)
     GameTooltip:AddLine("Arrastrar: mover el icono", 0.7, 0.7, 0.7)
     GameTooltip:Show()
@@ -1013,7 +1121,8 @@ local function CreateMainFrame()
   CreateLeaderboardTab(tabFrames[1])
   CreateLeagueTab(tabFrames[2])
   CreateChallengesTab(tabFrames[3])
-  CreateSessionTab(tabFrames[4])
+  CreateHistoryTab(tabFrames[4])
+  CreateSessionTab(tabFrames[5])
 
   -- Pestañas colgando del borde inferior, como las ventanas del juego.
   for index, name in ipairs(TAB_NAMES) do
@@ -1081,5 +1190,6 @@ function UI.Refresh()
   RefreshLeaderboard()
   RefreshLeague()
   RefreshChallenges()
+  RefreshHistory()
   RefreshSessionTab()
 end

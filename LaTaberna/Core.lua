@@ -8,7 +8,7 @@ local Protocol = LaTaberna.Protocol
 local Core = {}
 LaTaberna.Core = Core
 
-Core.VERSION = "0.4.0"
+Core.VERSION = "0.5.0"
 
 -- ---------------------------------------------------------------------------
 -- Diálogos estáticos
@@ -46,6 +46,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     LaTaberna.Comm.Init()
     LaTaberna.UI.Init()
     LaTaberna.Stats.Init()
+    LaTaberna.Played.Init()
     if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then
       C_GuildInfo.GuildRoster()
     end
@@ -84,6 +85,8 @@ local function PrintHelp()
   print("  /taberna export — muestra un respaldo copiable de la sesión")
   print("  /taberna import — importa un respaldo")
   print("  /taberna escala 0.6-1.6 — tamaño de la ventana (reset para el defecto)")
+  print("  /taberna jugado — tiempo jugado de tu cuenta, por personaje")
+  print("  /taberna anunciar — publica la clasificación en el chat de hermandad")
   print("  /taberna estado — versiones, APIs y estado de la sesión")
   print("  /taberna stat <id> — diagnóstico: muestra GetStatistic(id)")
   print("  /taberna scanstats <desde> <hasta> — diagnóstico: estadísticas con valor")
@@ -144,6 +147,38 @@ SlashCmdList["LATABERNA"] = function(msg)
     end
   elseif cmd == "estado" then
     PrintStatus()
+  elseif cmd == "jugado" then
+    local rows = LaTaberna.Played.Breakdown()
+    Session.Print("Tiempo jugado de la cuenta: "
+      .. LaTaberna.Played.Format(LaTaberna.Played.AccountTotal()))
+    if #rows == 0 then
+      print("  (sin datos todavía; se miden al entrar con cada personaje)")
+    end
+    for _, r in ipairs(rows) do
+      print("  " .. r.name .. ": " .. LaTaberna.Played.Format(r.total))
+    end
+  elseif cmd == "anunciar" then
+    local s = Session.Active()
+    if not s then
+      Session.Print("No hay sesión activa.")
+    elseif not IsInGuild() then
+      Session.Print("No estás en una hermandad.")
+    else
+      SendChatMessage("La Taberna — Clasificación de la liga:", "GUILD")
+      local board = LaTaberna.Rules.ComputeLeaderboard(s)
+      local shown = 0
+      for i, entry in ipairs(board) do
+        if i > 5 then
+          break
+        end
+        SendChatMessage(i .. ". " .. Session.DisplayName(entry.name)
+          .. " — " .. entry.points .. " pt", "GUILD")
+        shown = shown + 1
+      end
+      if shown == 0 then
+        SendChatMessage("(sin puntos todavía)", "GUILD")
+      end
+    end
   elseif cmd == "stat" then
     local id = tonumber(msg:match("^%S+%s+(%d+)") or "")
     if id and GetStatistic then
