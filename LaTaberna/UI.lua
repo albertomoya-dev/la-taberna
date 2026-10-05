@@ -312,7 +312,7 @@ local function CreateSessionTab(parent)
   local f = CreateFrame("Frame", nil, parent)
   f:SetAllPoints()
 
-  for i = 1, 7 do
+  for i = 1, 8 do
     local line = MakeLabel(f, i == 1 and "GameFontHighlight" or "GameFontNormal", 440)
     line:SetPoint("TOPLEFT", 8, -10 - (i - 1) * 22)
     sessionLines[i] = line
@@ -405,12 +405,13 @@ local function RefreshSessionTab()
     local online = Session.IsOrganizerOnline()
     sessionLines[5]:SetText("Confirmaciones: "
       .. (online and "disponibles" or "en pausa (organizador desconectado)"))
-    sessionLines[6]:SetText("Resultados confirmados: " .. #s.results)
+    sessionLines[6]:SetText("Código de invitación: " .. (s.id or "?"))
+    sessionLines[7]:SetText("Resultados confirmados: " .. #s.results)
   else
     sessionLines[1]:SetText("Sin sesión activa")
     sessionLines[2]:SetText("Crea una sesión o espera a que el organizador te invite.")
   end
-  sessionLines[7]:SetText("Versión del addon: " .. ADDON_VERSION
+  sessionLines[8]:SetText("Versión del addon: " .. ADDON_VERSION
     .. " · protocolo: " .. LaTaberna.Protocol.VERSION)
 
   sessionButtons.create:SetShown(s == nil)
@@ -668,6 +669,8 @@ function UI.ShowImport()
 end
 
 -- Código de invitación: el id de sesión, para compartir por donde queráis.
+-- (Los addons no pueden escribir en el portapapeles; lo máximo posible es
+-- dejar el texto seleccionado para copiarlo con Ctrl+C.)
 function UI.ShowInvite()
   local s = Session.Active()
   if not s then
@@ -675,7 +678,7 @@ function UI.ShowInvite()
     return
   end
   ShowTextDialog({
-    title = "Comparte este código; tus amigos se unen con /taberna unirse <código>",
+    title = "Código ya seleccionado: pulsa Ctrl+C para copiarlo",
     text = s.id,
     highlight = true,
   })
